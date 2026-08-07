@@ -8,14 +8,11 @@
 requêtes côté client (invalidation plutôt que confiance dans le contenu de l'évènement), et être capable d'expliquer
 les deux limites de sécurité et de scalabilité du mécanisme mis en place dans ce chapitre.
 
-Ce TP n'a pas de marqueur `LAB:` à reconstruire : le mécanisme de marqueurs de ce dépôt ne s'applique qu'aux fichiers
-`.java`, `.yml` et `.xml` du module `api`, pas au frontend (sous-module git séparé). Le code frontend
-(`frontend/src/lib/notifications.ts`, branché dans `frontend/src/routes/__root.tsx`) est donc déjà complet sur
-`main`. C'est un TP d'observation.
+Ce TP n'a pas de marqueur `LAB:` à reconstruire : le mécanisme de marqueurs de ce dépôt ne s'applique pas au frontend (sous-module git séparé). C'est un TP d'observation.
 
 ## Consignes
 
-Lancer `./lab.sh 6.3` (crée la branche et fournit l'énoncé ; aucun fichier n'est modifié).
+Lancer `./lab.sh 6.3`.
 
 1. Lancer l'environnement complet (`./deploy-dev.sh`, ou reprendre l'environnement du TP 6.2), puis `cd frontend &&
    npm run dev`.

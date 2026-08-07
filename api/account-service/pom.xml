@@ -75,6 +75,10 @@
         </dependency>
         <dependency>
             <groupId>com.c4-soft.springaddons</groupId>
+            <artifactId>spring-addons-starter-openapi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.c4-soft.springaddons</groupId>
             <artifactId>spring-addons-starter-rest</artifactId>
         </dependency>
 

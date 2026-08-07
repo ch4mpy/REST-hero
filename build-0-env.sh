@@ -1,43 +1,52 @@
 #!/usr/bin/env bash
 
+HOST_NAME=host.docker.internal
+
+# Default values for .env variables. Comments removed on purpose: entries are
+# appended one by one below, existing lines are left untouched.
+ENV_DEFAULTS=(
+  "CN=${HOST_NAME}"
+  "HOST_NAME=${HOST_NAME}"
+  "MAIL_HOST=${HOST_NAME}"
+  "MAIL_PORT=1025"
+  "KC_DB_IMAGE=postgres:18"
+  "KC_DB_HOST=host.docker.internal"
+  "KC_DB_PORT=2632"
+  "KC_DB_NAME=keycloak"
+  "KC_DB_SCHEMA=public"
+  "KC_DB_USERNAME=keycloak"
+  'KC_DB_URL=jdbc:postgresql://${KC_DB_HOST}:${KC_DB_PORT}/${KC_DB_NAME}?currentSchema=${KC_DB_SCHEMA}'
+  "KC_VERSION=26.6"
+  "KC_DB=postgres"
+  "KC_HTTP_ENABLED=false"
+  "KC_HTTPS_PORT=3643"
+  "KC_LOG_LEVEL=INFO"
+  "ACCOUNTS_DB_PORT=2633"
+  "CARDS_DB_PORT=2634"
+  "CUSTOMERS_DB_PORT=2635"
+  "RABBITMQ_PORT=5672"
+  "RABBITMQ_MANAGEMENT_PORT=15672"
+  "RABBITMQ_USER=rest-api"
+  "RABBITMQ_PASSWORD=secret"
+)
+
+# Appends "KEY=value" to .env only if KEY is not already defined there.
+add_env_var_if_missing() {
+  local key="${1%%=*}"
+  if ! grep -q "^${key}=" ./.env; then
+    echo "$1" >> ./.env
+  fi
+}
+
 if [ ! -f ./.env ]; then
-  echo ".env file not found, creating one with default values."
-  HOST_NAME=host.docker.internal
-  echo -e "CN=${HOST_NAME}\n\
-HOST_NAME=${HOST_NAME}\n\
-\n\
-# These values should satisfy dev and staging envs with MailPit\n\
-# Edit in prod to point to Office365 SMTP server (or any other SMTP server)\n\
-MAIL_HOST=${HOST_NAME}\n\
-MAIL_PORT=1025\n\
-\n\
-# Keycloak database\n\
-KC_DB_IMAGE=postgres:18\n\
-KC_DB_HOST=host.docker.internal\n\
-KC_DB_PORT=2632\n\
-KC_DB_NAME=keycloak\n\
-KC_DB_SCHEMA=public\n\
-KC_DB_USERNAME=keycloak\n\
-KC_DB_URL=jdbc:postgresql://\${KC_DB_HOST}:\${KC_DB_PORT}/\${KC_DB_NAME}?currentSchema=\${KC_DB_SCHEMA}\n\
-\n\
-# Keycloak server 26.6 by Quay.io (DB configured above)\n\
-KC_VERSION=26.6\n\
-KC_DB=postgres\n\
-KC_HTTP_ENABLED=false\n\
-KC_HTTPS_PORT=3643\n\
-KC_LOG_LEVEL=INFO\n\
-\n\
-ACCOUNTS_DB_PORT=2633\n\
-CARDS_DB_PORT=2634\n\
-CUSTOMERS_DB_PORT=2635\n\
-\n\
-# RabbitMQ (application events)\n\
-RABBITMQ_PORT=5672\n\
-RABBITMQ_MANAGEMENT_PORT=15672\n\
-RABBITMQ_USER=rest-api\n\
-RABBITMQ_PASSWORD=secret\n\
-" > .env
+  echo ".env file not found, creating one."
+  touch ./.env
 fi
+
+for entry in "${ENV_DEFAULTS[@]}"; do
+  add_env_var_if_missing "$entry"
+done
+
 source ./.env
 
 if [ ! -d ./secrets ]; then
@@ -102,6 +111,7 @@ if [ ! -f ./secrets/rest-api/postgres_password.txt ]; then
   echo $(openssl rand -hex 16) > ./secrets/rest-api/postgres_password.txt
   chmod 600 ./secrets/rest-api/postgres_password.txt
 fi
+add_env_var_if_missing "SPRING_DATASOURCE_PASSWORD=$(cat ./secrets/rest-api/postgres_password.txt)"
 
 # Generate self-signed SSL certificates
 if [ ! -d ./certs ]; then

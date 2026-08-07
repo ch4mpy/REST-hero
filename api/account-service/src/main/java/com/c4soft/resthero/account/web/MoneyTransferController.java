@@ -28,6 +28,7 @@ import com.c4soft.resthero.account.jpa.MoneyTransferRepository;
 import com.c4soft.resthero.api.CurrenciesApi;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.events.DomainEvent;
+import com.c4soft.resthero.commons.events.ResourceType;
 import io.micrometer.observation.annotation.Observed;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -137,7 +138,7 @@ public class MoneyTransferController {
               eventsExchange.getName(),
               "account.updated",
               new DomainEvent(
-                  "account",
+                  ResourceType.ACCOUNT_TRANSFERS,
                   a.getIban().toMachineReadableString(),
                   a.getCustomerId(),
                   List.of("account.read_any"),
@@ -170,7 +171,7 @@ public class MoneyTransferController {
               eventsExchange.getName(),
               "account.updated",
               new DomainEvent(
-                  "account",
+                  ResourceType.ACCOUNT_TRANSFERS,
                   a.getIban().toMachineReadableString(),
                   a.getCustomerId(),
                   List.of("account.read_any"),

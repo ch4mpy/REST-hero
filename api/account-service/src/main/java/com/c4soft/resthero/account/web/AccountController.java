@@ -1,7 +1,10 @@
 package com.c4soft.resthero.account.web;
 
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +24,8 @@ import com.c4soft.resthero.account.domain.Account;
 import com.c4soft.resthero.account.jpa.AccountRepository;
 import com.c4soft.resthero.api.CustomersApi;
 import com.c4soft.resthero.commons.domain.Iban;
+import com.c4soft.resthero.commons.events.DomainEvent;
+import com.c4soft.resthero.commons.events.ResourceType;
 import com.c4soft.resthero.commons.exception.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -49,6 +54,9 @@ public class AccountController {
   private final AccountMapper accountMapper;
 
   private final CustomersApi customersApi;
+
+  private final RabbitTemplate rabbitTemplate;
+  private final TopicExchange eventsExchange;
 
   /**
    * Requires the `account.read_any` authority or that the given customer ID matches the
@@ -121,6 +129,18 @@ public class AccountController {
             auth.getName(),
             account.getIban(),
             account.getCustomerId());
+
+    rabbitTemplate
+        .convertAndSend(
+            eventsExchange.getName(),
+            "account.created",
+            new DomainEvent(
+                ResourceType.ACCOUNT,
+                account.getIban().toMachineReadableString(),
+                account.getCustomerId(),
+                List.of("account.read_any"),
+                DomainEvent.EventType.CREATE,
+                Instant.now()));
 
     return ResponseEntity
         .created(
