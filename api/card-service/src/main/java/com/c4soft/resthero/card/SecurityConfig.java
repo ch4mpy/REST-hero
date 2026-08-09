@@ -5,7 +5,6 @@ package com.c4soft.resthero.card;
 
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -15,7 +14,6 @@ import org.springframework.web.client.HttpClientErrorException;
 import com.c4soft.resthero.account.api.AccountsApi;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.Iban.NotAnIbanException;
-import com.c4soft.resthero.commons.security.ServicesRolesAuthoritiesConverter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -26,11 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 @EnableMethodSecurity
 public class SecurityConfig {
   public static final String ACCESS_CONTROL_BEAN_NAME = "ac";
-
-  @Bean
-  ServicesRolesAuthoritiesConverter authoritiesConverter() {
-    return new ServicesRolesAuthoritiesConverter();
-  }
 
   @Component(ACCESS_CONTROL_BEAN_NAME)
   @RequiredArgsConstructor

@@ -37,7 +37,7 @@ spring:
             authorization-grant-type: client_credentials
             client-id: ${card-service-client-id}
             client-secret: ${card-service-client-secret}
-            
+
   ssl:
     bundle:
       pem:
@@ -67,7 +67,8 @@ com:
         ops:
           - iss: ${issuer}
             authorities:
-              - path: $.realm_access.roles
+              - path: $.resource_access.${spring.application.name}.roles
+                prefix: card.
         resourceserver:
           permit-all:
             - /actuator/health/readiness
@@ -81,7 +82,7 @@ com:
             base-url: https://${cn}:8081
             ssl-bundle: self-signed
             headers:
-              Accept: 
+              Accept:
                 - application/json
                 - application/problem+json
             authorization:

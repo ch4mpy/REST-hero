@@ -5,14 +5,12 @@ package com.c4soft.resthero.account;
 
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import com.c4soft.resthero.account.jpa.AccountRepository;
 import com.c4soft.resthero.commons.domain.Iban;
-import com.c4soft.resthero.commons.security.ServicesRolesAuthoritiesConverter;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -22,11 +20,6 @@ import lombok.RequiredArgsConstructor;
 @EnableMethodSecurity
 public class SecurityConfig {
   public static final String ACCESS_CONTROL_BEAN_NAME = "ac";
-
-  @Bean
-  ServicesRolesAuthoritiesConverter authoritiesConverter() {
-    return new ServicesRolesAuthoritiesConverter();
-  }
 
   @Component(ACCESS_CONTROL_BEAN_NAME)
   @RequiredArgsConstructor

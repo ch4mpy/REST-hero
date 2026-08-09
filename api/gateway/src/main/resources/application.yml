@@ -110,7 +110,14 @@ com:
         ops:
           - iss: ${issuer}
             authorities:
-              - path: $.resource_access.${bff-client-id}.roles
+              - path: $.resource_access.account-service.roles
+                prefix: account.
+              - path: $.resource_access.card-service.roles
+                prefix: card.
+              - path: $.resource_access.currency-service.roles
+                prefix: currency.
+              - path: $.resource_access.customer-service.roles
+                prefix: customer.
         client:
           client-uri: ${reverse-proxy-uri}
           pkce-forced: true

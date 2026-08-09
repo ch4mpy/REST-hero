@@ -70,7 +70,8 @@ com:
         ops:
           - iss: ${issuer}
             authorities:
-              - path: $.realm_access.roles
+              - path: $.resource_access.${spring.application.name}.roles
+                prefix: customer.
         resourceserver:
           permit-all:
             - /actuator/health/readiness
@@ -84,7 +85,7 @@ com:
             base-url: https://${cn}:3643/auth
             ssl-bundle: self-signed
             headers:
-              Accept: 
+              Accept:
                 - application/json
                 - application/problem+json
             authorization:

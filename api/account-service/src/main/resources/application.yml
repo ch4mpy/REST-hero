@@ -15,7 +15,7 @@ spring:
   application:
     name: account-service
   cache:
-    type: simple 
+    type: simple
   jpa:
     hibernate:
       ddl-auto: none
@@ -66,7 +66,8 @@ com:
         ops:
           - iss: ${issuer}
             authorities:
-              - path: $.realm_access.roles
+              - path: $.resource_access.${spring.application.name}.roles
+                prefix: account.
         resourceserver:
           permit-all:
             - /accounts/**
@@ -81,7 +82,7 @@ com:
             base-url: https://${cn}:8083
             ssl-bundle: self-signed
             headers:
-              Accept: 
+              Accept:
                 - application/json
                 - application/problem+json
             authorization:
@@ -91,7 +92,7 @@ com:
             base-url: https://${cn}:8084
             ssl-bundle: self-signed
             headers:
-              Accept: 
+              Accept:
                 - application/json
                 - application/problem+json
             authorization:

@@ -1,6 +1,5 @@
 package com.c4soft.resthero.account.web;
 
-import java.util.Arrays;
 import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
