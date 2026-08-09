@@ -1,70 +1,72 @@
 # REST-hero : APIs REST avec Spring Boot
 
 Ce support de TPs répond à des exigences de production avancées. Les services REST sont notamment :
+
 - **Audités** :
-    * Hibernate Envers garde la trace de chaque version des entités en base de données avec l'instant et l'auteur de la modification
-    * Chaque endpoint qui modifie l'état de l'application (`POST`, `PUT` ou `DELETE`) log au niveau `info` un résumé de ce qui a été modifié et par qui
+  - Hibernate Envers garde la trace de chaque version des entités en base de données avec l'instant et l'auteur de la modification
+  - Chaque endpoint qui modifie l'état de l'application (`POST`, `PUT` ou `DELETE`) log au niveau `info` un résumé de ce qui a été modifié et par qui
 - **Observables** et observées de manière centralisée : émet des logs collectés dans Loki, des métriques dans Mimir et des traces dans Tempo, le tout visualisé dans [Grafana](https://host.docker.internal/grafana).
 - **Documentés** avec OpenAPI : permet aux clients de générer le code pour les consommer et aux développeurs de les visualiser dans une Swagger UI. Cette documentation est générée à partir des sources (commentaires JavaDoc compris)
 - **Communicants** : Appels REST inter-service:
-  * Le `customer-service` utilise Keycloak pour accéder aux utilisateurs
-  * L'`account-service` vérifie auprès du `customer-service` qu'un client existe avant de créer un compte à son nom. Il sollicite également le `currency-service` lorsqu'un virement nécessite des opérations de change.
-  * Le `card-service` vérifie auprès de l'`account-service` qu'un compte existe avant de lui attacher une carte et lui déclare un transfert d'argent lors d'un paiement par carte.
+  - Le `customer-service` utilise Keycloak pour accéder aux utilisateurs
+  - L'`account-service` vérifie auprès du `customer-service` qu'un client existe avant de créer un compte à son nom. Il sollicite également le `currency-service` lorsqu'un virement nécessite des opérations de change.
+  - Le `card-service` vérifie auprès de l'`account-service` qu'un compte existe avant de lui attacher une carte et lui déclare un transfert d'argent lors d'un paiement par carte.
 - **Bidirectionnels** : Le front manipule les ressources du serveur via des appels REST et le serveur pousse des évènements sur les ressources aux utilisateurs connectés via SSE (Server Sent Events). Les services publient des évènements de mise à jour de ressources sur RabbitMQ. Ces évènements sont relayés au frontend par SSE.
-- **Sécurisés** : 
-  * Chaque endpoint d'API vérifie l'identité attachée à la requête et ses relations éventuelles avec les ressources qu'elle cherche à manipuler avant d'autoriser l'accès.
-  * Ne sont utilisés que des clients OAuth2 confidentiels (avec mot de passe). Les requêtes du front React sont autorisées avec le pattern [_OAuth2 BFF_](https://www.baeldung.com/spring-cloud-gateway-bff-oauth2)
-  * Les évènements SSE ne sont adressé qu'aux utilisateurs connectés qui ont un accès en lecture aux ressources modifiées
+- **Sécurisés** :
+  - Chaque endpoint d'API vérifie l'identité attachée à la requête et ses relations éventuelles avec les ressources qu'elle cherche à manipuler avant d'autoriser l'accès.
+  - Ne sont utilisés que des clients OAuth2 confidentiels (avec mot de passe). Les requêtes du front React sont autorisées avec le pattern [_OAuth2 BFF_](https://www.baeldung.com/spring-cloud-gateway-bff-oauth2)
+  - Les évènements SSE ne sont adressé qu'aux utilisateurs connectés qui ont un accès en lecture aux ressources modifiées
 - **Persistants** : les objets métier sont sauvegardés dans PostgreSQL avec JPA. Les requêtes les plus complexes (filtres sur les paiements par carte et les mouvements entre comptes) sont construites avec des spécifications JPA.
 - **Performants** : utilisation de caches pour limiter les accès à la base de données et les appels REST inter-services lorsque c'est pertinent.
 
 - [Introduction](#intro)
 - [Déploiement de l'environnement de dev](#dev-deployment)
 - [1. Build avec Maven](#maven-build)
-  * [1.1. Introduction](#maven-build-intro)
+  - [1.1. Introduction](#maven-build-intro)
     - [1.1.1. Structure](#maven-build-structure)
     - [1.1.2. Phases](#maven-build-phases)
-  * [1.2. Dépendances](#maven-build-dependencies)
-  * [1.3. Processeurs d’annotations à la compilation](#maven-build-annotations-preprocessing)
-  * [1.4. Génération de spec OpenAPI à partir du code source](#maven-build-openapi-spec-generation)
-  * [1.5. Génération de code client à partir de spec OpenAPI](#maven-build-openapi-client-code-generation)
-  * [1.6. Manipulation des ressources](#maven-build-resources-handling)
-  * [1.7. Profiles Maven](#maven-profiles)
+  - [1.2. Dépendances](#maven-build-dependencies)
+  - [1.3. Processeurs d’annotations à la compilation](#maven-build-annotations-preprocessing)
+  - [1.4. Génération de spec OpenAPI à partir du code source](#maven-build-openapi-spec-generation)
+  - [1.5. Génération de code client à partir de spec OpenAPI](#maven-build-openapi-client-code-generation)
+  - [1.6. Manipulation des ressources](#maven-build-resources-handling)
+  - [1.7. Profiles Maven](#maven-profiles)
 - [2. Fondamentaux Spring](#spring)
-  * [2.1. Injection de dépendance](#spring-di)
-  * [2.2. `@Component` et variantes](#spring-components)
-  * [2.3. Configuration externe](#spring-properties)
-  * [2.4. `@Configuration` et `@Bean`](#spring-configuration)
-  * [2.5. Proxies générés](#spring-proxies)
-  * [2.6. Tests](#spring-testing)
-  * [2.7. Starter Spring Boot](#spring-boot-starter)
+  - [2.1. Injection de dépendance](#spring-di)
+  - [2.2. `@Component` et variantes](#spring-components)
+  - [2.3. Configuration externe](#spring-properties)
+  - [2.4. `@Configuration` et `@Bean`](#spring-configuration)
+  - [2.5. Proxies générés](#spring-proxies)
+  - [2.6. Tests](#spring-testing)
+  - [2.7. Starter Spring Boot](#spring-boot-starter)
 - [3. Modèles objet-relationnel et accès aux données](#jpa)
-  * [3.1. `@Entity`](#jpa-entity)
-  * [3.2. Identifiants générés](#jpa-generated-ids)
-  * [3.3. Relations](#jpa-relations)
-  * [3.4. Conversion de types](#jpa-type-converter)
-  * [3.5. `@Repository` Spring Data JPA](#jpa-repositories)
-  * [3.6. JPA query methods](#jpa-query-dsl)
-  * [3.7. Spécifications JPA](#jpa-specifications)
-  * [3.8. Transactions](#jpa-transactions)
-  * [3.9. Hibernate Envers](#jpa-envers)
+  - [3.1. `@Entity`](#jpa-entity)
+  - [3.2. Identifiants générés](#jpa-generated-ids)
+  - [3.3. Relations](#jpa-relations)
+  - [3.4. Conversion de types](#jpa-type-converter)
+  - [3.5. `@Repository` Spring Data JPA](#jpa-repositories)
+  - [3.6. JPA query methods](#jpa-query-dsl)
+  - [3.7. Spécifications JPA](#jpa-specifications)
+  - [3.8. Transactions](#jpa-transactions)
+  - [3.9. Hibernate Envers](#jpa-envers)
 - [4. Services REST WebMvc avec Spring Boot](#rest-controller)
-  * [4.1. `@RequestMapping`](#rest-controller-request-mapping)
-  * [4.2. Convertisseurs automatiques de Spring](#rest-controller-converters)
-  * [4.3. Validation des entrées](#rest-controller-validation)
-  * [4.4. Gestion des exceptions](#rest-controller-exceptions)
-  * [4.5. Génération de la documentation OpenAPI](#rest-controller-openapi)
-  * [4.6. Appels de services REST externes](#rest-controller-inter-service-communication)
-  * [4.7. Logs](#rest-controller-logging)
+  - [4.1. `@RequestMapping`](#rest-controller-request-mapping)
+  - [4.2. Convertisseurs automatiques de Spring](#rest-controller-converters)
+  - [4.3. Validation des entrées](#rest-controller-validation)
+  - [4.4. Gestion des exceptions](#rest-controller-exceptions)
+  - [4.5. Génération de la documentation OpenAPI](#rest-controller-openapi)
+  - [4.6. Appels de services REST externes](#rest-controller-inter-service-communication)
+  - [4.7. Logs](#rest-controller-logging)
 - [5. Mise en cache](#caching)
 - [6. Messagerie asynchrone et notifications temps réel](#messaging)
-  * [6.1. Publication d'un événement métier](#messaging-publish)
-  * [6.2. Relais par la gateway : RabbitMQ vers Server-Sent Events](#messaging-gateway-sse)
-  * [6.3. Abonnement du frontend](#messaging-frontend)
+  - [6.1. Publication d'un événement métier](#messaging-publish)
+  - [6.2. Relais par la gateway : RabbitMQ vers Server-Sent Events](#messaging-gateway-sse)
+  - [6.3. Abonnement du frontend](#messaging-frontend)
 
 ## <a name="intro"/>Introduction
 
 Le cas d'utilisation est une banque en ligne simplifiée avec :
+
 - Opérations de change basées sur le fixing veille de la Banque Centrale Européenne.
 - Gestion des bénéficiaires d'un client.
 - Virements entre comptes. Il n'y a pas de connexion à d'autres banques. Les opérations de crédit / débit des comptes qui ne sont pas gérés en interne sont simplement ignorées.
@@ -72,6 +74,7 @@ Le cas d'utilisation est une banque en ligne simplifiée avec :
 - Paiements par carte.
 
 La solution est composée d'une interface graphique React interrogeant une API REST composée des modules suivants :
+
 - une `gateway`. Les requêtes (du frontend) préfixées avec `/gateway/bff` sont autorisées avec des cookies de session (`http-only=true`) et protégées contre le CSRF (cookie `XSRF-TOKEN` avec `http-only=false` et header `X-XSRF-TOKEN` requis pour pour les requêtes `POST`, `PUT` `PATCH` et `DELETE`). Les requêtes de clients OAuth2 (appels inter-services, Bruno, Postman, ...) préfixées avec `/gateway/m2m` sont autorisées avec un `Bearer` token dans le header `Authorization`.
 - `rest-hero-starter-common` est un starter Spring Boot contenant des classes et de l'auto-configuration partagée.
 - `currency-service` fournit un référentiel des devises supportées et du change sur le fixing veille de la BCE (via [https://frankfurter.dev](https://frankfurter.dev/))
@@ -82,19 +85,22 @@ La solution est composée d'une interface graphique React interrogeant une API R
 ## <a name="dev-deployment"/>Déploiement de l'environnement de dev
 
 Pré-requis :
+
 - [Git](https://git-scm.com/install/). Sur Windows, Git Bash avec Mingw. Toujours sous Windows, installer [7-zip](https://www.7-zip.fr/download.html) et créer une copie de`7z.exe` nommée `zip.exe`.
 - [nvm](https://www.nvmnode.com/fr/guide/download.html)
-- [SDKMan](https://sdkman.io/install/) 
+- [SDKMan](https://sdkman.io/install/)
 - Docker ou [Docker Desktop](https://docs.docker.com/desktop/)
 - une entrée `127.0.0.1 host.docker.internal` dans `/etc/hosts` (`C:\windows\system32\drivers\etc\hosts` sous Windows)
 - un IDE : [Eclipse STS](https://spring.io/tools#eclipse) et [Visual Studio Code](https://code.visualstudio.com/download) (avec des plugins pour React) ou IntelliJ Ultimate
 
 Le script `deploy-dev.sh` :
+
 - crée des certificats SSL auto-signés s'il n'y en a pas déjà dans `~/.ssh`
 - monte l'infra dans Docker (bases PostgreSQL, Keycloak, Mailpit, Grafana, Loki, Prometheus, Tempo)
 - fait un build Maven générant les specs OpenAPI du back
 - initialise le sous-module Git contenant le code du front React
 - installe les dépendances du front et génère le code client pour consommer l'API
+
 ```bash
 bash ./deploy-dev.sh
 
@@ -109,12 +115,14 @@ cd frontend && npm i && npm run api && cd ..
 Dans [Keycloak](https://host.docker.internal/auth/admin/master/console/#/labs/realm-settings/email), éditer le mot de passe SMTP avec la valeur de `secrets/mail/password.txt`.
 
 Les services Docker :
+
 - https://host.docker.internal/ui/ le frontend React (`advisor`/`secret`)
 - https://host.docker.internal/auth/admin/master/console/#/labs Keycloak (`admin`/`secret`)
 - https://host.docker.internal/grafana
 - https://host.docker.internal/mailpit
 
 Pour démarrer le front depuis le répertoire `frontend`:
+
 ```bash
 npm run dev
 ```
@@ -179,11 +187,15 @@ le profile `openapi` pour ajouter des dépendances à SpringDoc-OpenAPI, lancer 
 intégration, récupérer la spec OpenAPI sur la Swagger UI; puis arrêter l'application après les tests d'intégration.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.1.1
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -226,11 +238,15 @@ module spécifique, préciser son nom avec l'option `-pl` mais attention, pour q
 assemblées, il faut ajouter `-am`. Par exemple (`mvn install -pl account-service -am`)
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.1.2
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -266,11 +282,15 @@ Dépendances utilisées durant les TPs:
 - `jspecify` : null safety
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.2
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -282,6 +302,7 @@ Retour à la branche principale après T.P.
 `lombok`, `mapstruct`, `hibernate-jpamodelgen`, `spring-boot-configuration-processor` et `therapi-runtime-javadoc-scribe` génèrent du code à
 partir d'annotations. Il faut indiquer au `maven-compiler-plugin` l'ordre dans lequel les appliquer (par exemple
 Mapstruct utilise les accesseurs générés par Lombok).
+
 ```xml
 <plugin>
   <groupId>org.apache.maven.plugins</groupId>
@@ -321,11 +342,15 @@ Mapstruct utilise les accesseurs générés par Lombok).
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.3
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -444,11 +469,15 @@ besoin de récupérer la configuration OpenID du provider, nous utiliserons le `
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.4
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -548,11 +577,15 @@ problèmes de compilation, on applique le `fmt-maven-plugin`:
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.5
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -576,11 +609,15 @@ de modifier ce comportement dans le `buils`. Par exemple :
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.6
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -590,10 +627,12 @@ Retour à la branche principale après T.P.
 ### 1.7. <a name="maven-profiles"/>Profiles Maven
 
 Il est possible de définir un `profile` Maven pour lequel à peu près n'importe quoi peut être redéfini (properties, dependencies, plugin à appliquer, etc.). C'est ce qui est fait dans les modules pour :
+
 - basculer entre les dépendances pour H2 et celles pour PostgreSQL
 - activer la Swagger-UI (avec les dépendances springdoc-openapi), démarrer puis arrêter l'application autour des tests d'intégration Maven et enfin récupérer la spec OpenAPI exposée par Swagger au runtime pour l'écrire dans le système de fichier
 
 Pour activer un ou plusieurs profils, ajouter l'option `-P` (majuscule) immédiatement suivie des profils séparés par des virgules
+
 ```bash
 mvn clean install -Popenapi,h2
 ```
@@ -603,11 +642,15 @@ Un profil peut être activé par défaut. C'est le cas du profil `postgresql` da
 Attention, dès qu'au moins un profil est activé de manière explicite, il n'y a plus d'activation par défaut. Dans ce projet, on associera donc toujours le profil `openapi` soit au profil `h2` (comme ci-dessus) soit au profil `postgresql`.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 1.7
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -618,11 +661,12 @@ Retour à la branche principale après T.P.
 
 ### 2.1. <a name="spring-di"/>Injection de dépendance
 
-L'injection de dépendances est le fait de compter sur le conteneur d'application pour fournir à un objet ceux dont il dépend pour accomplir ses tâches. 
+L'injection de dépendances est le fait de compter sur le conteneur d'application pour fournir à un objet ceux dont il dépend pour accomplir ses tâches.
 
-Je recommande de faire l'injection par le biais du constructeur. 
+Je recommande de faire l'injection par le biais du constructeur.
 
-Par exemple, pour l'`AccountController` qui a besoin de collaborer avec les 
+Par exemple, pour l'`AccountController` qui a besoin de collaborer avec les
+
 - `AccountRepository` pour manipuler les comptes en base de données
 - `AccountMapper` pour faire des conversions entre DTOs et objets métier
 - `CustomersApi` pour dialoguer avec le `customer-service`
@@ -646,6 +690,7 @@ public class AccountController {
 Spring s'occupe d'instancier les classes dans le bon ordre.
 
 Lorsque plusieurs beans ont le même type, ils sont résolus par un _qualifier_ qui est par défaut le nom de la méthode `@Bean` qui a instancié chacun d'eux. Un exemple tiré de la `RestConfiguration` de l'account-service dans lequel `customerServiceClient` et `currenciesServiceClient` sont deux instances de `RestClient` exposées en tant que bean par `spring-addons-starter-rest`:
+
 ```yaml
 com:
   c4-soft:
@@ -657,6 +702,7 @@ com:
           currencies-service-client:
             base-url: https://localhost:8084
 ```
+
 ```java
 @Configuration
 public class RestConfiguration {
@@ -677,6 +723,7 @@ public class RestConfiguration {
 Il est possible de surcharger le _qualifier_ par défaut lors de la définition d'un bean comme lors de son injection avec `@Qualifier`.
 
 Pour rendre une dépendance optionnelle (on s'attend à ce qu'il soit possible que la configuration de l'application puisse ne pas fournir un bean), typer cette dépendance avec `Optional<T>` :
+
 ```java
 @TestConfiguration
 public class SpringDataWebConvertersTestConfiguration {
@@ -704,11 +751,15 @@ public class SpringDataWebConvertersTestConfiguration {
 Les composants fournis par le biais de l'injection de dépendances peuvent être facilement remplacés pendant les tests.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.1
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -718,11 +769,13 @@ Retour à la branche principale après T.P.
 ### 2.2. <a name="spring-components"/>`@Component` et variantes
 
 Les objets instanciés par Spring sont appelés des beans. Ils sont généralement détectés automatiquement lors du component scan grâce à l'annotation `@Component` ou à l'une de ses spécialisations, notamment :
+
 - `@RestController` : expose des endpoints HTTP REST.
 - `@Service` : porte de la logique métier.
 - `@Repository` : accès aux données.
 - `@Configuration` : déclare des beans à l'aide de méthodes @Bean.
 - `@Component` : composant générique lorsqu'aucune autre annotation n'est pertinente (convertisseurs, mappers, validateurs, etc.).
+
 ```java
 @Component
 static class SecurityAwareRevisionListener implements RevisionListener {
@@ -738,6 +791,7 @@ static class SecurityAwareRevisionListener implements RevisionListener {
 ```
 
 Les `@Component` peuvent comporter des méthodes décorées avec `@PostConstruct` et `@PreDestroy`, ce qui permet de faire exécuter au conteneur d'application du code d'initialisation ou de nettoyage. C'est utile lorsqu'on initialise un cache, valide une configuration, ouvre une connexion, etc.
+
 ```java
 @Service
 @RequiredArgsConstructor
@@ -759,11 +813,15 @@ public class FrankfurterForexService implements ForexService {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.2
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -773,19 +831,24 @@ Retour à la branche principale après T.P.
 ### 2.3. <a name="spring-properties"/>Configuration externe
 
 La configuration Spring Boot s'appuie en grande partie sur les _properties_ avec comme source principale `application.properties` ou, comme c'est le cas dans ce projet, `application.yml`.
+
 ```yaml
 spring:
   datasource:
     password: change-me
 ```
 
-Les propriétés qui sont définies dans `application.yml` peuvent être surchargées par 
+Les propriétés qui sont définies dans `application.yml` peuvent être surchargées par
+
 - des variables d'environnement
+
 ```bash
 SPRING_DATASOURCE_PASSWORD=secret
 java -jar account-service.jar
 ```
+
 - des arguments en ligne de commande
+
 ```bash
 java -jar account-service.jar --spring.datasource.password=secret
 # Ou
@@ -793,6 +856,7 @@ java -jar -Dspring.datasource.password=secret account-service.jar
 ```
 
 Il est possible d'accéder à n'importe quelle _property_ en utilisant `@Value` lors de l'injection de dépendances
+
 ```java
 @Component
 public class MyConfigurableComponent {
@@ -803,12 +867,14 @@ public class MyConfigurableComponent {
 ```
 
 Pour définir ses propres propriétés de configuration, le plus commode est d'employer `@ConfigurationProperties`
+
 ```java
 @SpringBootApplication
 @ConfigurationPropertiesScan
 public class CustomerServiceApplication {
 }
 ```
+
 ```java
 @ConfigurationProperties(prefix = "keycloak-admin-api")
 @Data
@@ -821,11 +887,15 @@ public class KeycloakAdminApiProperties {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.3
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -835,11 +905,13 @@ Retour à la branche principale après T.P.
 ### 2.4. <a name="spring-configuration"/>`@Configuration` et `@Bean`
 
 Toutes les classes utiles à l'application ne peuvent pas être annotées avec `@Component`. C'est notamment le cas :
+
 - des classes provenant de bibliothèques tierces ;
 - lorsque plusieurs instances d'un même type doivent être configurées différemment ;
 - lorsque l'instanciation nécessite une logique particulière.
 
 Une classe `@Configuration` permet alors de déclarer explicitement les beans avec des méthodes `@Bean`.
+
 ```java
 @Configuration
 public class RestConfiguration {
@@ -850,16 +922,21 @@ public class RestConfiguration {
   }
 }
 ```
+
 Les paramètres d'une méthode `@Bean` sont injectés par Spring.
 
 Je recommande de regrouper les beans ayant une responsabilité commune dans une même classe de configuration (`RestConfiguration`, `CacheConfiguration`, `WebConfiguration`, etc.) plutôt que de créer une configuration unique pour toute l'application.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.4
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -871,6 +948,7 @@ Retour à la branche principale après T.P.
 Spring génère fréquemment des proxies autour des beans afin d'ajouter des comportements transverses (cross-cutting concerns) sans modifier le code métier.
 
 C'est notamment le cas pour :
+
 - `@Transactional`
 - `@Cacheable`, `@CachePut` et `@CacheEvict`
 - `@Observed`
@@ -881,6 +959,7 @@ Le proxy intercepte les appels à une méthode avant de déléguer au bean origi
 Une conséquence importante est qu'un appel d'une méthode d'un bean vers une autre méthode du même bean ne passe pas par le proxy.
 
 Dans l'exemple suivant, `@Transactional` est ignoré car `saveAccount()` est dans le même bean :
+
 ```java
 @Service
 public class AccountService {
@@ -896,7 +975,9 @@ public class AccountService {
   }
 }
 ```
+
 Une solution :
+
 ```java
 @Service
 @RequiredArgsConstructor
@@ -920,11 +1001,15 @@ public class AccountService {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.5
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -936,6 +1021,7 @@ Retour à la branche principale après T.P.
 Spring Boot fournit plusieurs niveaux de tests. Plus le contexte Spring chargé est réduit, plus les tests sont rapides.
 
 Il faut :
+
 - privilégier les tests unitaires lorsque le comportement peut être vérifié sans démarrer Spring
 - utiliser les tests de tranche pour tester les `@RestController` avec `@WebMvcTest` et le `@Repository` avec `@DataJpaTest`
 - limiter au strict nécessaire les `@SpringBootTest`
@@ -943,27 +1029,32 @@ Il faut :
 Pour les tests d'accès aux données, `@DataJpaTest` effectue chaque test dans une transaction et effectue un rollback.
 
 Les dépendances injectées par Spring peuvent être :
+
 - remplacées par des `@MockitoBean` (ou des implémentations spécifiques aux tests)
 - importées explicitement avec `@Import({})` si elles ne font pas partie de la _tranche_ prévue par Spring
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.6
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
 ./exit-lab.sh --reset
 ```
 
-
 ### 2.7. <a name="spring-boot-starter"/>Starter Spring Boot
 
 Un starter Spring Boot sert à partager de l'auto-configuration.
 
 Les composants à configurer dans les applications qui l'utilisent sont définis dans `src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
+
 ```
 com.c4soft.resthero.commons.CommonWebConfiguration
 com.c4soft.resthero.commons.domain.IbanStringMapper
@@ -973,11 +1064,15 @@ com.c4soft.resthero.commons.exception.CommonExceptionsHandler
 Lors de la création de starters, il est important d'être peu intrusif et de laisser la main à l'application pour surcharger l'auto-configuration proposée. Les annotations `@ConditionalOn...` telles que `@ConditionalOnMissingBean` et `@ConditionalOnProperty` peuvent alors trouver tout leur intérêt.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 2.7
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1030,11 +1125,15 @@ public class Card {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.1
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1059,11 +1158,15 @@ private Long id;
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.2
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1073,6 +1176,7 @@ Retour à la branche principale après T.P.
 ### 3.3. <a name="jpa-relations"/>Relations
 
 Une propriété ayant pour type une autre entité doit porter `@OneToOne` ou `@ManyToOne`.
+
 ```java
 @Entity
 public class CardPayment {
@@ -1093,6 +1197,7 @@ En cas de relation bidirectionnelle, il faut indiquer un `mappedBy` du côté _"
 
 `@Embeddable` indique qu'une classe n'est pas mappée sur une table. Ses propriétés sont ajoutées aux colonnes de la
 table des entités dans lesquelles elle est `@Embedded`.
+
 ```java
 @Entity
 public class Card {
@@ -1117,11 +1222,15 @@ public class Card {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.3
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1156,6 +1265,7 @@ public class InstantStringAttributeConverter implements AttributeConverter<Insta
 ```
 
 Si un `@Converter` n'est pas `autoApply = true`, il faut l'appliquer sur les propriétés à convertir :
+
 ```java
 @Entity
 public class Card {
@@ -1168,17 +1278,21 @@ public class Card {
 }
 ```
 
-  ##### T.P.
-  Initialisation :
-  ```bash
-  ./start-lab.sh 3.4
-  ```
-  Retour à la branche principale après T.P.
-  ```bash
-  ./exit-lab.sh --keep
-  # ou pour restaurer l'état initial du TP
-  ./exit-lab.sh --reset
-  ```
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 3.4
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
 
 ### 3.5. <a name="jpa-repositories"/>`@Repository` Spring Data JPA
 
@@ -1195,11 +1309,15 @@ interface JpaCardRepository extends JpaRepository<Card, String> {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.5
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1221,11 +1339,15 @@ public interface CardPaymentJpaRepository extends JpaRepository<CardPayment, Str
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.6
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1276,11 +1398,15 @@ public interface MoneyTransferRepository
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.7
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1299,6 +1425,7 @@ l'intérieur de la transaction dans laquelle la racine a été récupérée.
 Le plus simple est généralement de décorer les méthodes de `@Controller` avec `@Transactionnal`, mais la logique métier
 demande parfois plus de finesse (différentes méthodes exécutées dans des transactions différentes pour que certaines
 soient `commit` alors que d'autres sont `rollback`).
+
 ```java
 @Transactional(readOnly = true)
 @GetMapping(BASE_PATH)
@@ -1309,11 +1436,15 @@ public List<AccountResponse> listAccounts(@RequestParam String customerId) {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.8
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1321,19 +1452,23 @@ Retour à la branche principale après T.P.
 ```
 
 ### 3.9. <a name="jpa-envers"/>Hibernate Envers
+
 Hibernate Envers permet de conserver chaque version des entités auditées dans des tables dédiées avec des informations à notre main.
+
 ```xml
 <dependency>
   <groupId>org.springframework.data</groupId>
   <artifactId>spring-data-envers</artifactId>
 </dependency>
 ```
+
 ```java
 @Configuration
 @EnableEnversRepositories
 public class PersistenceConfiguration {
 }
 ```
+
 ```java
 @Audited
 @Entity
@@ -1342,11 +1477,13 @@ public class Account {
 ```
 
 Pour donner accès aux différents états dans lesquels une entité a été sauvegardée, un `@Repository` doit implémenter `RevisionRepository<E, ID, R>`:
+
 ```java
 interface JpaAccountRepository extends JpaRepository<Account, Long>, RevisionRepository<Account, Long, Long> {}
 ```
 
 Pour ajouter des données aux révisions, il faut remplacer l'implémentation par défaut de `@RevisionEntity` et fournir une implémentation de `RevisionListener` :
+
 ```java
 @Component
 static class SecurityAwareRevisionListener implements RevisionListener {
@@ -1360,6 +1497,7 @@ static class SecurityAwareRevisionListener implements RevisionListener {
   }
 }
 ```
+
 ```java
 @Entity
 @Table(name = "REVINFO")
@@ -1393,11 +1531,15 @@ static class Revinfo implements Serializable {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 3.9
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1446,11 +1588,15 @@ avec le même _body_, seule la première requête devrait avoir un effet, alors 
 autant de ressources (ou tenter de le faire).
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 4.1
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1508,11 +1654,15 @@ public class WebConfiguration implements WebMvcConfigurer {
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 4.2
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1574,11 +1724,15 @@ Je recommande de laisser passer `null` et de combiner les annotations avec `@Not
 attribut obligatoire.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 4.3
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1613,11 +1767,15 @@ Lorsque créer et intercepter une exception métier n'a pas d'intérêt intrins�
 `ErrorResponseException` pour laquelle Spring fournit déjà un `@ExceptionHandler`.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 4.4
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1657,17 +1815,21 @@ public PagedModel<MoneyTransferResponse> listMoneyTransfers(
     @ParameterObject Pageable pageable);
 ```
 
-  ##### T.P.
-  Initialisation :
-  ```bash
-  ./start-lab.sh 4.5
-  ```
-  Retour à la branche principale après T.P.
-  ```bash
-  ./exit-lab.sh --keep
-  # ou pour restaurer l'état initial du TP
-  ./exit-lab.sh --reset
-  ```
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 4.5
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
 
 ### 4.6. <a name="rest-controller-inter-service-communication"/>Appels de services REST externes
 
@@ -1681,6 +1843,7 @@ maintenance depuis l'apparition des proxy d'`HttpExchange` générés.
 Dans ce projet, nous générons les interfaces `@HttpExchange` à partir de specs OpenAPI (en utilisant l'
 `openapi-generator-maven-plugin`). Il est toutefois possible de déclarer ces interfaces manuellement, ce qui peut être
 utile :
+
 - lorsque l'API à consommer n'expose pas de spec OpenAPI
 - lorsqu'on préfère déclarer des dépendances explicites (Maven) entre modules plutôt que de reposer sur les specs OpenAPI
 
@@ -1792,11 +1955,15 @@ management:
 ```
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./start-lab.sh 4.7
 ```
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
@@ -1816,6 +1983,7 @@ Je conseille de créer un cache par type de données et par index. Par exemple, 
 `bidulesParTruc` et `bidulesParMachin`.
 
 Pour activer la mise en cache dans l'application :
+
 ```xml
 <dependency>
   <groupId>org.springframework.boot</groupId>
@@ -1828,7 +1996,8 @@ Pour activer la mise en cache dans l'application :
   <artifactId>caffeine</artifactId>
 </dependency>
 ```
-```java
+
+````java
 @Configuration
 @EnableCaching
 public class CacheConfiguration {
@@ -1839,18 +2008,22 @@ public class CacheConfiguration {
 Initialisation :
 ```bash
 ./start-lab.sh 5
-```
+````
+
 Retour à la branche principale après T.P.
+
 ```bash
 ./exit-lab.sh --keep
 # ou pour restaurer l'état initial du TP
 ./exit-lab.sh --reset
 ```
-  CacheManager cacheManager() {
-    return new ConcurrentMapCacheManager();
-  }
+
+CacheManager cacheManager() {
+return new ConcurrentMapCacheManager();
 }
-```
+}
+
+````
 ```yml
 spring:
   cache:
@@ -1861,19 +2034,22 @@ spring:
     type: caffeine
     caffeine:
       spec: expireAfterWrite=60m
-```
+````
 
 Pour déclarer un ou plusieurs caches, on décore généralement une classe :
+
 ```java
 @CacheConfig(cacheNames = {"bidulesParTruc", "bidulesParMachin"})
 ```
 
 Pour indiquer que la valeur de retour peut être mise en cache :
+
 ```java
 @Cacheable(cacheNames = "bidulesParTruc")
 ```
 
 Pour indiquer qu'une opération en écriture nécessite des opérations de mise à jour du cache :
+
 ```java
 @Caching(put = @CachePut(cacheNames = "bidulesParTruc", key = "#bidule.truc"),
     evict = @CacheEvict(cacheNames = "bidulesParMachin", key = "#bidule.machin"))
@@ -1885,9 +2061,10 @@ gestion des caches. Je recommande dans ce cas de faire un proxy n'exposant que l
 
 ## 6. <a name="messaging"/>Messagerie asynchrone et notifications temps réel
 
-Nous étudions ici le méchanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans  rafraîchissement de page ni polling.
+Nous étudions ici le méchanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans rafraîchissement de page ni polling.
 
 L'architecture retenue a trois maillons :
+
 - un service métier (`account-service`) publie un évènement applicatif sur RabbitMQ dès qu'une action métier réussit ;
 - la `gateway` consomme ces évènements et les relaie au navigateur par Server-Sent Events (SSE), un flux HTTP à sens
   unique, plus simple qu'un WebSocket puisqu'on n'a jamais besoin d'écrire du navigateur vers le serveur sur ce canal ;
@@ -1904,7 +2081,7 @@ pas par l'utilisateur). Le vrai sujet d'autorisation est ailleurs : garantir qu'
 utilisateurs légitimes pour le voir, ni plus (fuite d'information), ni moins (un conseiller qui a le droit de
 consulter n'importe quel compte doit aussi être notifié des évènements sur les comptes qu'il consulte, pas seulement
 le client propriétaire). D'où un évènement qui porte, en plus de son type et de son identifiant de ressource, le
-`subject` du propriétaire de la ressource *et* la liste des rôles qui y donnent également accès, à l'image des
+`subject` du propriétaire de la ressource _et_ la liste des rôles qui y donnent également accès, à l'image des
 expressions `@PreAuthorize` déjà utilisées sur les endpoints REST correspondants.
 
 ### 6.1. <a name="messaging-publish"/>Publication d'un événement métier
@@ -1922,9 +2099,10 @@ rest-hero:
 
 Ce découpage par service (plutôt qu'un exchange unique `app.events`) évite qu'un service ne puisse publier sous le nom
 d'un autre, et respecte la frontière de responsabilité entre services : chacun garde la maîtrise de son propre topic,
-tout en réutilisant la même classe de configuration partagée puisque seul le *nom* change d'un service à l'autre.
+tout en réutilisant la même classe de configuration partagée puisque seul le _nom_ change d'un service à l'autre.
 
-Le contrat d'évènement lui-même est partagé (dans `rest-hero-starter-common`), et suffisamment générique : 
+Le contrat d'évènement lui-même est partagé (dans `rest-hero-starter-common`), et suffisamment générique :
+
 - `resourceType` est une simple chaîne de caractères à la main de chaque service. Il permet au frontend de savoir quel type de requête doit éventuellement être rejoué (composants affichant des collections de données), voir même quel objet doit être mis à jour (`resourceId`).
 - `resourceOwner` et `audienceRoles` décrivent qui doit recevoir l'évènement : le propriétaire de la ressource, et les roles qui y donnent accès. La gateway n'a besoin de rien savoir de plus pour diffuser correctement (voir 6.2)
 - `eventType` donne du contexte sur le type d'évènement sur le serveur (création / mise à jour / suppression) et permet au frontend d'afficher un notification, même si la ressource concernée n'est pas actuellement affichée (par exemple _"Vous avez reçu 200 000 XPF"_)
@@ -1987,11 +2165,15 @@ rabbitTemplate.convertAndSend(
 pouvoir être notifié de ses évolutions.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./lab.sh 6.1
 ```
+
 Retour à la branche principale après T.P. :
+
 ```bash
 git switch main
 ```
@@ -2090,11 +2272,15 @@ public void onDomainEvent(DomainEvent event) {
 **Limite connue, non traitée dans ce TP** : le registre d'abonnements est en mémoire, local à l'instance de la gateway. Avec plusieurs instances, un évènement qui arrive sur l'instance B alors que la connexion SSE de l'utilisateur est ouverte sur l'instance A est silencieusement perdu pour cet utilisateur. Une solution passerait par un registre partagé (Redis par exemple) ou par un relais STOMP directement géré par RabbitMQ, mais ça sort du cadre de ce TP.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./lab.sh 6.2
 ```
+
 Retour à la branche principale après T.P. :
+
 ```bash
 git switch main
 ```
@@ -2104,13 +2290,22 @@ git switch main
 Le front du TP étant une application React utilisant [TANSTACK Query](https://tanstack.com/query/latest), un hook ouvre le flux SSE tant que l'utilisateur est authentifié, et invalide les entrées de cache concernées par le type de ressource reçu plutôt (le type d'évènement n'est pasutilisé) :
 
 ```ts
-function invalidateForEvent(queryClient: QueryClient, event: DomainEvent): void {
+function invalidateForEvent(
+  queryClient: QueryClient,
+  event: DomainEvent,
+): void {
   if (!event.resourceId) return;
   switch (event.resourceType) {
     case "account":
-      queryClient.invalidateQueries({ queryKey: ["account", event.resourceId] });
-      queryClient.invalidateQueries({ queryKey: ["transfers", event.resourceId] });
-      queryClient.invalidateQueries({ queryKey: ["transfers-in", event.resourceId] });
+      queryClient.invalidateQueries({
+        queryKey: ["account", event.resourceId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["transfers", event.resourceId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["transfers-in", event.resourceId],
+      });
       break;
   }
 }
@@ -2129,16 +2324,21 @@ export function useDomainEventsSubscription(): void {
     // EventSource ne peut pas être piloté par le client fetch généré (il fait du streaming, pas
     // fetch), mais réutiliser son chemin de requête garde l'URL synchronisée avec la spec OpenAPI
     // plutôt que de coder "/bff/events" en dur une seconde fois ici.
-    void gatewayApi.subscribeToServerStateChangedEventsRequestOpts().then((requestOpts) => {
-      if (cancelled) return;
-      eventSource = new EventSource(`${GATEWAY_BASE_URL}${requestOpts.path}`, {
-        withCredentials: true,
+    void gatewayApi
+      .subscribeToServerStateChangedEventsRequestOpts()
+      .then((requestOpts) => {
+        if (cancelled) return;
+        eventSource = new EventSource(
+          `${GATEWAY_BASE_URL}${requestOpts.path}`,
+          {
+            withCredentials: true,
+          },
+        );
+        eventSource.onmessage = (message) => {
+          const event = DomainEventFromJSON(JSON.parse(message.data));
+          invalidateForEvent(queryClient, event);
+        };
       });
-      eventSource.onmessage = (message) => {
-        const event = DomainEventFromJSON(JSON.parse(message.data));
-        invalidateForEvent(queryClient, event);
-      };
-    });
 
     return () => {
       cancelled = true;
@@ -2151,15 +2351,18 @@ export function useDomainEventsSubscription(): void {
 Ce TP n'a pas d'exercice à trous. C'est un TP d'observation.
 
 ##### T.P.
+
 Initialisation :
+
 ```bash
 ./lab.sh 6.3
 ```
+
 Retour à la branche principale après T.P. :
+
 ```bash
 git switch main
 ```
-
 
 <p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/">
   La formation

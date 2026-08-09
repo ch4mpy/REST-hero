@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -61,6 +63,12 @@ class CardControllerTest {
 
   @MockitoBean
   MoneyTransfersApi transfersApi;
+
+  @MockitoBean
+  RabbitTemplate rabbitTemplate;
+
+  @MockitoBean
+  TopicExchange eventsExchange;
 
   @Autowired
   MockMvc mockMvc;
@@ -355,6 +363,14 @@ class CardControllerTest {
     var dto = new CardStatusRequest(false);
     when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
     when(cardRepo.save(any(Card.class))).thenAnswer(i -> i.getArgument(0));
+    when(accountsApi.getAccount(card.getIban().toMachineReadableString()))
+        .thenReturn(
+            ResponseEntity
+                .ok(
+                    accountOwnedBy(
+                        CardFixtures.CUSTOMER_SUBJECT,
+                        card.getIban().toMachineReadableString(),
+                        "XPF")));
 
     mockMvc
         .perform(
@@ -429,6 +445,14 @@ class CardControllerTest {
     var dto = new CardCeilingsRequest(2000, 10000);
     when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
     when(cardRepo.save(any(Card.class))).thenAnswer(i -> i.getArgument(0));
+    when(accountsApi.getAccount(card.getIban().toMachineReadableString()))
+        .thenReturn(
+            ResponseEntity
+                .ok(
+                    accountOwnedBy(
+                        CardFixtures.CUSTOMER_SUBJECT,
+                        card.getIban().toMachineReadableString(),
+                        "XPF")));
 
     mockMvc
         .perform(

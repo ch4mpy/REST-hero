@@ -90,6 +90,10 @@
             <groupId>com.c4-soft.springaddons</groupId>
             <artifactId>spring-addons-starter-oidc</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.c4-soft.springaddons</groupId>
+            <artifactId>spring-addons-starter-openapi</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springdoc</groupId>

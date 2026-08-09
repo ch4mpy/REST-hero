@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.c4soft.resthero</groupId>
@@ -70,6 +70,10 @@
         <dependency>
             <groupId>com.c4-soft.springaddons</groupId>
             <artifactId>spring-addons-starter-oidc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.c4-soft.springaddons</groupId>
+            <artifactId>spring-addons-starter-openapi</artifactId>
         </dependency>
         <dependency>
             <groupId>com.c4-soft.springaddons</groupId>
@@ -172,17 +176,17 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
-        
+
         <dependency>
             <groupId>com.c4-soft.springaddons</groupId>
             <artifactId>spring-addons-starter-oidc-test</artifactId>
             <scope>test</scope>
         </dependency>
-		<dependency>
-			<groupId>org.wiremock.integrations</groupId>
-			<artifactId>wiremock-spring-boot</artifactId>
+        <dependency>
+            <groupId>org.wiremock.integrations</groupId>
+            <artifactId>wiremock-spring-boot</artifactId>
             <scope>test</scope>
-		</dependency>
+        </dependency>
     </dependencies>
 
     <build>
@@ -195,7 +199,8 @@
                 <groupId>org.openapitools</groupId>
                 <artifactId>openapi-generator-maven-plugin</artifactId>
                 <executions>
-                    <!-- LAB:1.5:TODO:START Ajouter l'exécution qui génère le client account-service à partir de sa spec OpenAPI -->
+                    <!-- LAB:1.5:TODO:START Ajouter l'exécution qui génère le client account-service
+                    à partir de sa spec OpenAPI -->
                     <execution>
                         <goals>
                             <goal>generate</goal>

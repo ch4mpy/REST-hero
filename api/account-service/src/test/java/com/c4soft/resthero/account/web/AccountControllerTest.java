@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -51,6 +53,12 @@ class AccountControllerTest {
   @MockitoBean
   // LAB:2.1:REMOVE:END
   CustomersApi customersApi;
+
+  @MockitoBean
+  RabbitTemplate rabbitTemplate;
+
+  @MockitoBean
+  TopicExchange eventsExchange;
 
   @Autowired
   MockMvc mockMvc;
