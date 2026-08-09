@@ -26,8 +26,8 @@ public class EventsController {
 
   @GetMapping(BASE_PATH + "/resource-types")
   @PreAuthorize("isAuthenticated()")
-  public List<ResourceTypeResponse> listResourceTypes() {
-    return Arrays.stream(ResourceType.values()).map(ResourceTypeResponse::new).toList();
+  public List<ResourceType> listResourceTypes() {
+    return List.of(ResourceType.values());
   }
 
 }
