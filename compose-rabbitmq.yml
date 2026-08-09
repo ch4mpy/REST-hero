@@ -1,0 +1,21 @@
+name: rest-hero
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rest-hero.rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      TZ: "Pacific/Tahiti"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 3s
+      timeout: 60s
+      retries: 20
+    extra_hosts:
+      - host.docker.internal:host-gateway

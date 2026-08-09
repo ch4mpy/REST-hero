@@ -10,9 +10,11 @@ Ce support de TPs répond à des exigences de production avancées. Les services
   * Le `customer-service` utilise Keycloak pour accéder aux utilisateurs
   * L'`account-service` vérifie auprès du `customer-service` qu'un client existe avant de créer un compte à son nom. Il sollicite également le `currency-service` lorsqu'un virement nécessite des opérations de change.
   * Le `card-service` vérifie auprès de l'`account-service` qu'un compte existe avant de lui attacher une carte et lui déclare un transfert d'argent lors d'un paiement par carte.
+- **Bidirectionnels** : Le front manipule les ressources du serveur via des appels REST et le serveur pousse des évènements sur les ressources aux utilisateurs connectés via SSE (Server Sent Events). Les services publient des évènements de mise à jour de ressources sur RabbitMQ. Ces évènements sont relayés au frontend par SSE.
 - **Sécurisés** : 
   * Chaque endpoint d'API vérifie l'identité attachée à la requête et ses relations éventuelles avec les ressources qu'elle cherche à manipuler avant d'autoriser l'accès.
   * Ne sont utilisés que des clients OAuth2 confidentiels (avec mot de passe). Les requêtes du front React sont autorisées avec le pattern [_OAuth2 BFF_](https://www.baeldung.com/spring-cloud-gateway-bff-oauth2)
+  * Les évènements SSE ne sont adressé qu'aux utilisateurs connectés qui ont un accès en lecture aux ressources modifiées
 - **Persistants** : les objets métier sont sauvegardés dans PostgreSQL avec JPA. Les requêtes les plus complexes (filtres sur les paiements par carte et les mouvements entre comptes) sont construites avec des spécifications JPA.
 - **Performants** : utilisation de caches pour limiter les accès à la base de données et les appels REST inter-services lorsque c'est pertinent.
 
@@ -55,6 +57,10 @@ Ce support de TPs répond à des exigences de production avancées. Les services
   * [4.6. Appels de services REST externes](#rest-controller-inter-service-communication)
   * [4.7. Logs](#rest-controller-logging)
 - [5. Mise en cache](#caching)
+- [6. Messagerie asynchrone et notifications temps réel](#messaging)
+  * [6.1. Publication d'un événement métier](#messaging-publish)
+  * [6.2. Relais par la gateway : RabbitMQ vers Server-Sent Events](#messaging-gateway-sse)
+  * [6.3. Abonnement du frontend](#messaging-frontend)
 
 ## <a name="intro"/>Introduction
 
@@ -91,6 +97,13 @@ Le script `deploy-dev.sh` :
 - installe les dépendances du front et génère le code client pour consommer l'API
 ```bash
 bash ./deploy-dev.sh
+
+sdk env install
+nvm install --lts
+nvm use
+cd api && mvn install -Popenapi,h2 && cd ..
+git submodule init && git submodule update
+cd frontend && npm i && npm run api && cd ..
 ```
 
 Dans [Keycloak](https://host.docker.internal/auth/admin/master/console/#/labs/realm-settings/email), éditer le mot de passe SMTP avec la valeur de `secrets/mail/password.txt`.
@@ -1869,6 +1882,283 @@ Pour indiquer qu'une opération en écriture nécessite des opérations de mise 
 Lorsqu'une classe expose une interface publique plus importante que nécessaire, cela peut grandement compliquer la
 gestion des caches. Je recommande dans ce cas de faire un proxy n'exposant que le strict nécessaire et de gérer les caches
 à ce niveau.
+
+## 6. <a name="messaging"/>Messagerie asynchrone et notifications temps réel
+
+Nous étudions ici le méchanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans  rafraîchissement de page ni polling.
+
+L'architecture retenue a trois maillons :
+- un service métier (`account-service`) publie un évènement applicatif sur RabbitMQ dès qu'une action métier réussit ;
+- la `gateway` consomme ces évènements et les relaie au navigateur par Server-Sent Events (SSE), un flux HTTP à sens
+  unique, plus simple qu'un WebSocket puisqu'on n'a jamais besoin d'écrire du navigateur vers le serveur sur ce canal ;
+- le frontend garde des payloads d'évènement volontairement minces (identifiants seulement) et refait un appel REST
+  classique dès qu'il est notifié, plutôt que de faire transiter la donnée métier complète par le bus d'évènements.
+
+Le choix du SSE (plutôt que WebSocket/STOMP) tient aussi à la sécurité déjà en place : le flux SSE est exposé sous
+`/bff/**`, donc protégé par les mêmes cookies de session que le reste du BFF (voir l'introduction), sans complication
+supplémentaire de handshake ni de CSRF puisqu'un abonnement SSE est un simple `GET`.
+
+Aucune des trois briques n'a besoin de connaître le token `Bearer` de l'utilisateur ni son cookie de session : la
+publication d'un évènement est un aller RabbitMQ interne au backend (authentifié par des identifiants applicatifs,
+pas par l'utilisateur). Le vrai sujet d'autorisation est ailleurs : garantir qu'un évènement n'est diffusé qu'aux
+utilisateurs légitimes pour le voir, ni plus (fuite d'information), ni moins (un conseiller qui a le droit de
+consulter n'importe quel compte doit aussi être notifié des évènements sur les comptes qu'il consulte, pas seulement
+le client propriétaire). D'où un évènement qui porte, en plus de son type et de son identifiant de ressource, le
+`subject` du propriétaire de la ressource *et* la liste des rôles qui y donnent également accès, à l'image des
+expressions `@PreAuthorize` déjà utilisées sur les endpoints REST correspondants.
+
+### 6.1. <a name="messaging-publish"/>Publication d'un événement métier
+
+Chaque service métier publie sur son propre exchange RabbitMQ de type `topic`, plutôt que sur un exchange unique
+partagé par toute l'application. Le nom de cet exchange est une propriété externalisée (voir
+[2.3](#spring-properties)), dont la valeur est mécaniquement dérivée du nom d'application déjà déclaré
+(`spring.application.name`) plutôt qu'une chaîne inventée au cas par cas :
+
+```yaml
+rest-hero:
+  events:
+    exchange-name: rest-hero.${spring.application.name}
+```
+
+Ce découpage par service (plutôt qu'un exchange unique `app.events`) évite qu'un service ne puisse publier sous le nom
+d'un autre, et respecte la frontière de responsabilité entre services : chacun garde la maîtrise de son propre topic,
+tout en réutilisant la même classe de configuration partagée puisque seul le *nom* change d'un service à l'autre.
+
+Le contrat d'évènement lui-même est partagé (dans `rest-hero-starter-common`), et suffisamment générique : 
+- `resourceType` est une simple chaîne de caractères à la main de chaque service. Il permet au frontend de savoir quel type de requête doit éventuellement être rejoué (composants affichant des collections de données), voir même quel objet doit être mis à jour (`resourceId`).
+- `resourceOwner` et `audienceRoles` décrivent qui doit recevoir l'évènement : le propriétaire de la ressource, et les roles qui y donnent accès. La gateway n'a besoin de rien savoir de plus pour diffuser correctement (voir 6.2)
+- `eventType` donne du contexte sur le type d'évènement sur le serveur (création / mise à jour / suppression) et permet au frontend d'afficher un notification, même si la ressource concernée n'est pas actuellement affichée (par exemple _"Vous avez reçu 200 000 XPF"_)
+
+```java
+public record DomainEvent(
+    String resourceType,
+    String resourceId,
+    String resourceOwner,
+    List<String> audienceRoles,
+    EventType eventType,
+    Instant occurredAt) {
+
+  public enum EventType {
+    CREATE, UPDATE, DELETE;
+  }
+}
+```
+
+La classe qui déclare l'exchange et le convertisseur JSON pour RabbitMQ (`EventsRabbitConfiguration`) est, elle aussi, entièrement partagée et ne dépend que d'une propriété pour connaître le nom de son exchange :
+
+```java
+@Configuration
+@ConditionalOnClass(RabbitTemplate.class)
+@EnableConfigurationProperties(RestHeroEventsProperties.class)
+public class EventsRabbitConfiguration {
+
+  @Bean
+  TopicExchange eventsExchange(RestHeroEventsProperties properties) {
+    return new TopicExchange(properties.getExchangeName());
+  }
+
+  @Bean
+  MessageConverter eventsMessageConverter(JsonMapper jsonMapper) {
+    return new JacksonJsonMessageConverter(jsonMapper);
+  }
+}
+```
+
+Grâce à `@ConditionalOnClass`, cette classe n'est auto-configurée (voir [2.7](#spring-boot-starter)) que dans les modules qui dépendent de à la fois de `rest-hero-starter-common` et de `spring-boot-starter-amqp` (une dépendance optionnelle du starter). Sans cette garde, les service qui ne dépendraient que de `rest-hero-starter-common` échoueraient au démarrage en tentant de charger des types absents de leur classpath.
+L'exercice sur cette annotation précisément est traité dans le TP [2.7](#spring-boot-starter), pas ici.
+
+Publier un évènement se résume alors à un appel, juste après l'écriture qui vient de réussir. Dans le cas d'un virement, qui touche potentiellement deux comptes de deux propriétaires différents, un évènement est publié par compte concerné :
+
+```java
+rabbitTemplate.convertAndSend(
+    eventsExchange.getName(),
+    "account.updated",
+    new DomainEvent(
+        "account",
+        account.getIban().toMachineReadableString(),
+        account.getCustomerId(),
+        List.of("account.read_any"),
+        DomainEvent.EventType.UPDATE,
+        Instant.now()));
+```
+
+`account.read_any` reprend exactement l'autorité déjà utilisée dans les expressions `@PreAuthorize` de
+`AccountController` et `MoneyTransferController` : quiconque peut lire n'importe quel compte via REST doit aussi
+pouvoir être notifié de ses évolutions.
+
+##### T.P.
+Initialisation :
+```bash
+./lab.sh 6.1
+```
+Retour à la branche principale après T.P. :
+```bash
+git switch main
+```
+
+### 6.2. <a name="messaging-gateway-sse"/>Relais par la gateway : RabbitMQ vers Server-Sent Events
+
+La gateway connaît déjà la liste des services métier (c'est ce qui structure ses routes `/bff/accounts/**`,
+`/bff/cards/**`, etc.), donc ça ne l'engage pas davantage de lister aussi, en configuration, les exchanges auxquels
+elle s'abonne :
+
+```yaml
+rest-hero:
+  events:
+    subscribed-exchanges:
+      - rest-hero.account-service
+```
+
+Elle déclare sa propre queue (anonyme, non durable : elle ne doit survivre ni à un redémarrage ni être partagée entre instances) et un binding par exchange écouté, avec une clé de routage `#` (reçoit tout) :
+
+```java
+@Bean
+Queue gatewayEventsQueue() {
+  return new AnonymousQueue();
+}
+
+@Bean
+Declarables gatewayEventsBindings(Queue gatewayEventsQueue, GatewayEventsProperties properties) {
+  final var declarables = new ArrayList<Declarable>();
+  for (final var exchangeName : properties.getSubscribedExchanges()) {
+    final var exchange = new TopicExchange(exchangeName);
+    declarables.add(exchange);
+    declarables.add(BindingBuilder.bind(gatewayEventsQueue).to(exchange).with("#"));
+  }
+  return new Declarables(declarables);
+}
+```
+
+Un registre garde, en mémoire, la liste des abonnements ouverts : pour chaque `SseEmitter`, le `subject` et les rôles accordés à l'utilisateur au moment de la souscription (les `GrantedAuthority` présentes sur son `Authentication` à cet instant), avec nettoyage automatique à la fermeture, au timeout ou en erreur :
+
+```java
+private record Subscription(String subject, Set<String> roles, SseEmitter emitter) {}
+
+public void register(String subject, Set<String> roles, SseEmitter emitter) {
+  final var subscription = new Subscription(subject, roles, emitter);
+  subscriptions.add(subscription);
+  final Runnable cleanup = () -> subscriptions.remove(subscription);
+  emitter.onCompletion(cleanup);
+  emitter.onTimeout(cleanup);
+  emitter.onError(t -> cleanup.run());
+}
+
+public void broadcast(DomainEvent event) {
+  for (final var subscription : subscriptions) {
+    final var isOwner = subscription.subject().equals(event.resourceOwner());
+    final var hasAudienceRole = event.audienceRoles().stream().anyMatch(subscription.roles()::contains);
+    if (isOwner || hasAudienceRole) {
+      subscription.emitter().send(event);
+    }
+  }
+}
+```
+
+La gateway n'a besoin d'aucune connaissance métier pour ça : elle ne que comparer
+des chaînes de caractères (`subject`, rôles).
+
+`@PreAuthorize("isAuthenticated()")` garantit un 401 plutôt qu'un
+enregistrement pour un utilisateur anonyme :
+
+```java
+@PreAuthorize("isAuthenticated()")
+@GetMapping(path = "/bff/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+@ApiResponse(responseCode = "200",
+    content = @Content(mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
+        schema = @Schema(implementation = DomainEvent.class)))
+public SseEmitter subscribeToServerStateChangedEvents(Authentication auth) {
+  final var emitter = new SseEmitter(0L);
+  final var roles = auth.getAuthorities().stream()
+      .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
+  registry.register(auth.getName(), roles, emitter);
+  return emitter;
+}
+```
+
+L'annotation `@ApiResponse` est nécessaire pour documenter ce flux dans la spec OpenAPI : `SseEmitter` n'est un type générique Java (`ServerSentEvent<DomainEvent>`).
+
+Enfin, le relais proprement dit : un `@RabbitListener` reçoit l'évènement désérialisé et le diffuse aux abonnés
+concernés :
+
+```java
+@RabbitListener(queues = "#{gatewayEventsQueue.name}")
+public void onDomainEvent(DomainEvent event) {
+  registry.broadcast(event);
+}
+```
+
+**Limite connue, non traitée dans ce TP** : le registre d'abonnements est en mémoire, local à l'instance de la gateway. Avec plusieurs instances, un évènement qui arrive sur l'instance B alors que la connexion SSE de l'utilisateur est ouverte sur l'instance A est silencieusement perdu pour cet utilisateur. Une solution passerait par un registre partagé (Redis par exemple) ou par un relais STOMP directement géré par RabbitMQ, mais ça sort du cadre de ce TP.
+
+##### T.P.
+Initialisation :
+```bash
+./lab.sh 6.2
+```
+Retour à la branche principale après T.P. :
+```bash
+git switch main
+```
+
+### 6.3. <a name="messaging-frontend"/>Abonnement du frontend
+
+Le front du TP étant une application React utilisant [TANSTACK Query](https://tanstack.com/query/latest), un hook ouvre le flux SSE tant que l'utilisateur est authentifié, et invalide les entrées de cache concernées par le type de ressource reçu plutôt (le type d'évènement n'est pasutilisé) :
+
+```ts
+function invalidateForEvent(queryClient: QueryClient, event: DomainEvent): void {
+  if (!event.resourceId) return;
+  switch (event.resourceType) {
+    case "account":
+      queryClient.invalidateQueries({ queryKey: ["account", event.resourceId] });
+      queryClient.invalidateQueries({ queryKey: ["transfers", event.resourceId] });
+      queryClient.invalidateQueries({ queryKey: ["transfers-in", event.resourceId] });
+      break;
+  }
+}
+
+export function useDomainEventsSubscription(): void {
+  const queryClient = useQueryClient();
+  const { data: user } = useMe();
+  const authenticated = isAuthenticated(user);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    let eventSource: EventSource | undefined;
+    let cancelled = false;
+
+    // EventSource ne peut pas être piloté par le client fetch généré (il fait du streaming, pas
+    // fetch), mais réutiliser son chemin de requête garde l'URL synchronisée avec la spec OpenAPI
+    // plutôt que de coder "/bff/events" en dur une seconde fois ici.
+    void gatewayApi.subscribeToServerStateChangedEventsRequestOpts().then((requestOpts) => {
+      if (cancelled) return;
+      eventSource = new EventSource(`${GATEWAY_BASE_URL}${requestOpts.path}`, {
+        withCredentials: true,
+      });
+      eventSource.onmessage = (message) => {
+        const event = DomainEventFromJSON(JSON.parse(message.data));
+        invalidateForEvent(queryClient, event);
+      };
+    });
+
+    return () => {
+      cancelled = true;
+      eventSource?.close();
+    };
+  }, [authenticated, queryClient]);
+}
+```
+
+Ce TP n'a pas d'exercice à trous. C'est un TP d'observation.
+
+##### T.P.
+Initialisation :
+```bash
+./lab.sh 6.3
+```
+Retour à la branche principale après T.P. :
+```bash
+git switch main
+```
 
 
 <p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/">

@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -36,6 +41,7 @@ import com.c4soft.resthero.account.jpa.MoneyTransferRepository;
 import com.c4soft.resthero.api.CurrenciesApi;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapper;
+import com.c4soft.resthero.commons.events.DomainEvent;
 import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = MoneyTransferController.class, properties = {})
@@ -52,6 +58,12 @@ class MoneyTransferControllerTest {
 
   @MockitoBean
   CurrenciesApi currenciesApi;
+
+  @MockitoBean
+  RabbitTemplate rabbitTemplate;
+
+  @MockitoBean
+  TopicExchange eventsExchange;
 
   @Autowired
   MockMvc mockMvc;
@@ -151,6 +163,9 @@ class MoneyTransferControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(dto)))
         .andExpect(status().isCreated());
+
+    verify(rabbitTemplate, times(2))
+        .convertAndSend(any(), eq("account.updated"), any(DomainEvent.class));
   }
 
   @Test

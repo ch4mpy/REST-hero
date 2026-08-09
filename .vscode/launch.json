@@ -1,0 +1,52 @@
+{
+    // Utilisez IntelliSense pour en savoir plus sur les attributs possibles.
+    // Pointez pour afficher la description des attributs existants.
+    // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Current File",
+            "request": "launch",
+            "mainClass": "${file}"
+        },
+        {
+            "type": "java",
+            "name": "AccountServiceApplication",
+            "request": "launch",
+            "mainClass": "com.c4soft.resthero.account.AccountServiceApplication",
+            "projectName": "account-service",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "type": "java",
+            "name": "CardPaymentServiceApplication",
+            "request": "launch",
+            "mainClass": "com.c4soft.resthero.card.CardPaymentServiceApplication",
+            "projectName": "card-service",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "type": "java",
+            "name": "CurrencyServiceApplication",
+            "request": "launch",
+            "mainClass": "com.c4soft.resthero.currency.CurrencyServiceApplication",
+            "projectName": "currency-service"
+        },
+        {
+            "type": "java",
+            "name": "CustomerServiceApplication",
+            "request": "launch",
+            "mainClass": "com.c4soft.resthero.customer.CustomerServiceApplication",
+            "projectName": "customer-service",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "type": "java",
+            "name": "GatewayApplication",
+            "request": "launch",
+            "mainClass": "com.c4soft.resthero.gateway.GatewayApplication",
+            "projectName": "gateway"
+        }
+    ]
+}

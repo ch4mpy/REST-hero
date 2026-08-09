@@ -1,11 +1,14 @@
 package com.c4soft.resthero.customer.web;
 
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
@@ -26,6 +29,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import com.c4soft.resthero.commons.domain.Iban;
+import com.c4soft.resthero.commons.events.DomainEvent;
+import com.c4soft.resthero.commons.events.ResourceType;
 import com.c4soft.resthero.commons.exception.ResourceNotFoundException;
 import com.c4soft.resthero.customer.domain.Beneficiary;
 import com.c4soft.resthero.customer.domain.Customer;
@@ -60,6 +65,9 @@ public class CustomerController {
   private final BeneficiaryRepository beneficiaryRepo;
 
   private final CustomerRepository userRepo;
+
+  private final RabbitTemplate rabbitTemplate;
+  private final TopicExchange eventsExchange;
 
   /**
    * Requires the `customer.read_any` authority
@@ -158,6 +166,9 @@ public class CustomerController {
     assertLabelNotKnown(existingBeneficiaries.stream(), label);
     final var beneficiary = beneficiaryRepo.save(customerMapper.map(dto, customer.getId()));
     log.info("{} created beneficiary {} for customer {}", auth.getName(), beneficiary, customer);
+
+    publishBeneficiaryEvent(beneficiary, DomainEvent.EventType.CREATE);
+
     return ResponseEntity
         .created(
             URI
@@ -212,6 +223,8 @@ public class CustomerController {
     beneficiary.setLabel(label);
     beneficiaryRepo.save(beneficiary);
     log.info("{} updated beneficiary {} for customer {}", auth.getName(), beneficiary, customer);
+
+    publishBeneficiaryEvent(beneficiary, DomainEvent.EventType.UPDATE);
   }
 
   @Transactional(readOnly = false)
@@ -229,6 +242,22 @@ public class CustomerController {
     assertCustomerBeneficiaryConsistency(customer, beneficiary);
     beneficiaryRepo.delete(beneficiary);
     log.info("{} deleted beneficiary {} for customer {}", auth.getName(), beneficiary, customer);
+
+    publishBeneficiaryEvent(beneficiary, DomainEvent.EventType.DELETE);
+  }
+
+  private void publishBeneficiaryEvent(Beneficiary beneficiary, DomainEvent.EventType eventType) {
+    rabbitTemplate
+        .convertAndSend(
+            eventsExchange.getName(),
+            "customer.beneficiaries.updated",
+            new DomainEvent(
+                ResourceType.CUSTOMER_BENEFICIARIES,
+                beneficiary.getId().toString(),
+                beneficiary.getCustomerId(),
+                List.of("customer.read_any"),
+                eventType,
+                Instant.now()));
   }
 
   private void assertIbanNotKnown(Stream<Beneficiary> beneficiariesStream, Iban iban) {

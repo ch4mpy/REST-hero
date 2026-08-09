@@ -1,9 +1,13 @@
 package com.c4soft.resthero.account.web;
 
 import java.net.URI;
+import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedModel;
@@ -23,6 +27,8 @@ import com.c4soft.resthero.account.jpa.AccountRepository;
 import com.c4soft.resthero.account.jpa.MoneyTransferRepository;
 import com.c4soft.resthero.api.CurrenciesApi;
 import com.c4soft.resthero.commons.domain.Iban;
+import com.c4soft.resthero.commons.events.DomainEvent;
+import com.c4soft.resthero.commons.events.ResourceType;
 import io.micrometer.observation.annotation.Observed;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -49,6 +55,9 @@ public class MoneyTransferController {
   private final MoneyTransferMapper transferMapper;
 
   private final CurrenciesApi currenciesApi;
+
+  private final RabbitTemplate rabbitTemplate;
+  private final TopicExchange eventsExchange;
 
   /**
    * Requires the `account.read_any` authority or that the authenticated user is the owner of the
@@ -122,6 +131,20 @@ public class MoneyTransferController {
               substractedAmount,
               a.getBalance().getCurrency(),
               dto.sourceIban());
+
+      // LAB:6.1:TODO:START publier un DomainEvent d'évolution du compte source sur l'exchange du service
+      rabbitTemplate
+          .convertAndSend(
+              eventsExchange.getName(),
+              "account.updated",
+              new DomainEvent(
+                  ResourceType.ACCOUNT_TRANSFERS,
+                  a.getIban().toMachineReadableString(),
+                  a.getCustomerId(),
+                  List.of("account.read_any"),
+                  DomainEvent.EventType.UPDATE,
+                  Instant.now()));
+      // LAB:6.1:TODO:END
     });
 
     destinationAccount.ifPresent(a -> {
@@ -141,9 +164,24 @@ public class MoneyTransferController {
               addedAmount,
               a.getBalance().getCurrency(),
               dto.destinationIban());
+
+      // LAB:6.1:TODO:START publier un DomainEvent d'évolution du compte destinataire sur l'exchange du service
+      rabbitTemplate
+          .convertAndSend(
+              eventsExchange.getName(),
+              "account.updated",
+              new DomainEvent(
+                  ResourceType.ACCOUNT_TRANSFERS,
+                  a.getIban().toMachineReadableString(),
+                  a.getCustomerId(),
+                  List.of("account.read_any"),
+                  DomainEvent.EventType.UPDATE,
+                  Instant.now()));
+      // LAB:6.1:TODO:END
     });
 
     var transfer = transferRepo.save(transferMapper.map(dto));
+
     log
         .info(
             "{} transfered {}{} from {} to {}",

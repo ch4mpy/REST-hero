@@ -5,6 +5,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +38,8 @@ import com.c4soft.resthero.commons.domain.Amount;
 import com.c4soft.resthero.commons.domain.Currency;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.Period;
+import com.c4soft.resthero.commons.events.DomainEvent;
+import com.c4soft.resthero.commons.events.ResourceType;
 import com.c4soft.resthero.commons.exception.ResourceNotFoundException;
 import com.c4soft.resthero.commons.validation.ValidPeriod;
 import io.micrometer.observation.annotation.Observed;
@@ -71,6 +75,9 @@ public class CardController {
   private final AccountsApi accountsApi;
   private final TransactionalCardPaymentHelper transactionalCardPaymentHelper;
 
+  private final RabbitTemplate rabbitTemplate;
+  private final TopicExchange eventsExchange;
+
   /**
    * Requires the `card.read_any` authority or that the authenticated user is the owner of the
    * account.
@@ -100,8 +107,9 @@ public class CardController {
   public ResponseEntity<Void> createCard(@RequestBody @Valid CardRequest dto, Authentication auth)
       throws ResourceNotFoundException {
     // Assert that the account is known by the account service
+    com.c4soft.resthero.account.model.AccountResponse account;
     try {
-      accountsApi.getAccount(dto.iban());
+      account = accountsApi.getAccount(dto.iban()).getBody();
     } catch (HttpClientErrorException e) {
       if (HttpStatus.NOT_FOUND.equals(e.getStatusCode())) {
         log.warn("{} atempted to create a card for unknown account {}", auth.getName(), dto.iban());
@@ -135,6 +143,18 @@ public class CardController {
                         .transaction(dto.transactionCeiling())
                         .build()));
     log.info("{} created card {} for account {}", auth.getName(), card.getNumber(), dto.iban());
+
+    rabbitTemplate
+        .convertAndSend(
+            eventsExchange.getName(),
+            "account.cards.updated",
+            new DomainEvent(
+                ResourceType.ACCOUNT_CARDS,
+                iban.toMachineReadableString(),
+                account.getCustomerId(),
+                List.of("card.read_any"),
+                DomainEvent.EventType.CREATE,
+                Instant.now()));
 
     return ResponseEntity
         .created(
@@ -195,6 +215,8 @@ public class CardController {
 
     cardRepo.save(card);
     log.info("{} changed card {} status to {}", auth.getName(), card.getNumber(), dto.isActive());
+
+    publishCardUpdatedEvent(card);
   }
 
   /**
@@ -229,6 +251,8 @@ public class CardController {
     card.setCeilings(newCeilings);
     cardRepo.save(card);
     log.info("{} changed card {} ceilings to {}", auth.getName(), card.getNumber(), newCeilings);
+
+    publishCardUpdatedEvent(card);
   }
 
   /**
@@ -326,6 +350,18 @@ public class CardController {
               card.getNumber(),
               dto.destinationIban());
 
+      rabbitTemplate
+          .convertAndSend(
+              eventsExchange.getName(),
+              "card.payments.created",
+              new DomainEvent(
+                  ResourceType.CARD_PAYMENTS,
+                  card.getNumber(),
+                  resolveAccountOwner(card.getIban()),
+                  List.of("card.read_any"),
+                  DomainEvent.EventType.CREATE,
+                  Instant.now()));
+
       return ResponseEntity
           .created(
               URI
@@ -356,6 +392,24 @@ public class CardController {
               e);
       throw e;
     }
+  }
+
+  private String resolveAccountOwner(Iban iban) {
+    return accountsApi.getAccount(iban.toMachineReadableString()).getBody().getCustomerId();
+  }
+
+  private void publishCardUpdatedEvent(Card card) {
+    rabbitTemplate
+        .convertAndSend(
+            eventsExchange.getName(),
+            "card.updated",
+            new DomainEvent(
+                ResourceType.CARD,
+                card.getNumber(),
+                resolveAccountOwner(card.getIban()),
+                List.of("card.read_any"),
+                DomainEvent.EventType.UPDATE,
+                Instant.now()));
   }
 
   // LAB:2.5:REMOVE:START

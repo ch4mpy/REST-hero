@@ -49,6 +49,15 @@ spring:
   web:
     error:
       include-message: always
+  rabbitmq:
+    host: ${cn}
+    port: 5672
+    username: rest-api
+    password: secret
+
+rest-hero:
+  events:
+    exchange-name: rest-hero.${spring.application.name}
 
 com:
   c4-soft:
