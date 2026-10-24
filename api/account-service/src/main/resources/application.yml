@@ -5,7 +5,7 @@ dev-certs-dir: ${REST_HERO_CERTS_DIR}
 reverse-proxy-uri: https://${cn}
 issuer: ${reverse-proxy-uri}/auth/realms/labs
 account-service-client-id: account-service
-account-service-client-secret: secret
+account-service-client-secret: ${ACCOUNT_SERVICE_CLIENT_SECRET:secret}
 
 server:
   port: 8081
@@ -54,9 +54,9 @@ spring:
       include-message: always
   rabbitmq:
     host: ${cn}
-    port: 5672
-    username: rest-api
-    password: secret
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:rest-api}
+    password: ${RABBITMQ_PASSWORD:secret}
 
 rest-hero:
   events:
@@ -156,10 +156,10 @@ spring:
     activate:
       on-profile: postgresql
   datasource:
-    url: jdbc:postgresql://host.docker.internal:2633/accounts
+    url: jdbc:postgresql://host.docker.internal:${ACCOUNTS_DB_PORT:2633}/accounts
     username: rest-api
-    # LAB:2.3:TODO:START renseigner le mot de passe applicatif
-    password: secret
+    # LAB:2.3:TODO:START renseigner le mot de passe applicatif : un placeholder, pas une valeur
+    password: ${SPRING_DATASOURCE_PASSWORD}
     # LAB:2.3:TODO:END
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect

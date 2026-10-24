@@ -130,7 +130,7 @@ Pour démarrer le front depuis le répertoire `frontend`:
 npm run dev
 ```
 
-Pour démarrer les services de l'API depuis un IDE, charger le fichier `.env` dans la run config (il fournit `REST_HERO_CERTS_DIR`, le dossier du certificat), et surcharger la propriété `spring.datasource.password` avec la valeur du fichier `secrets/rest-api/postgres_password.txt`.
+Pour démarrer les services de l'API depuis un IDE, charger le fichier `.env` dans la run config : il fournit `REST_HERO_CERTS_DIR` (le dossier du certificat) et `SPRING_DATASOURCE_PASSWORD` (le mot de passe des bases).
 
 ## 1. <a name="maven-build"/>Build avec Maven
 
@@ -884,10 +884,16 @@ La configuration Spring Boot s'appuie en grande partie sur les _properties_ avec
 ```yaml
 spring:
   datasource:
-    password: change-me
+    password: ${SPRING_DATASOURCE_PASSWORD}
 ```
 
-Les propriétés qui sont définies dans `application.yml` peuvent être surchargées par
+Une valeur peut référencer une variable d'environnement avec un _placeholder_ : `${NOM}` est remplacé par la valeur de la
+variable, et `${NOM:défaut}` par `défaut` quand elle n'est pas définie. Pour un secret, pas de valeur par défaut :
+l'application refuse de démarrer plutôt que d'utiliser un mot de passe prévisible. `build-0-env.sh` écrit les valeurs
+de développement dans le fichier `.env` (ignoré par Git), que `build-openapi.sh` charge et qu'une run config d'IDE peut
+charger.
+
+Les propriétés qui sont définies dans `application.yml` peuvent aussi être surchargées par
 
 - des variables d'environnement
 

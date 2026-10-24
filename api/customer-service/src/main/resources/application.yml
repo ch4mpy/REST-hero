@@ -5,7 +5,7 @@ dev-certs-dir: ${REST_HERO_CERTS_DIR}
 reverse-proxy-uri: https://${cn}
 issuer: ${reverse-proxy-uri}/auth/realms/labs
 customer-service-client-id: customer-service
-customer-service-client-secret: secret
+customer-service-client-secret: ${CUSTOMER_SERVICE_CLIENT_SECRET:secret}
 
 keycloak-admin-api:
   base-uri: ${reverse-proxy-uri}/auth
@@ -58,9 +58,9 @@ spring:
       include-message: always
   rabbitmq:
     host: ${cn}
-    port: 5672
-    username: rest-api
-    password: secret
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:rest-api}
+    password: ${RABBITMQ_PASSWORD:secret}
 
 rest-hero:
   events:
@@ -149,9 +149,9 @@ spring:
     activate:
       on-profile: postgresql
   datasource:
-    url: jdbc:postgresql://host.docker.internal:2635/customers
+    url: jdbc:postgresql://host.docker.internal:${CUSTOMERS_DB_PORT:2635}/customers
     username: rest-api
-    password: secret
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 ---

@@ -3,7 +3,7 @@ cn: host.docker.internal
 # written in .env by build-0-env.sh (the IDE loads .env; build-openapi.sh sources it)
 dev-certs-dir: ${REST_HERO_CERTS_DIR}
 gateway-client-id: gateway
-gateway-client-secret: secret
+gateway-client-secret: ${GATEWAY_CLIENT_SECRET:secret}
 reverse-proxy-uri: https://${cn}
 issuer: ${reverse-proxy-uri}/auth/realms/labs
 accounts-service: https://${cn}:8081
@@ -89,9 +89,9 @@ spring:
       include-message: always
   rabbitmq:
     host: ${cn}
-    port: 5672
-    username: rest-api
-    password: secret
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:rest-api}
+    password: ${RABBITMQ_PASSWORD:secret}
 
 rest-hero:
   events:

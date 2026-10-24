@@ -5,7 +5,7 @@ dev-certs-dir: ${REST_HERO_CERTS_DIR}
 reverse-proxy-uri: https://${cn}
 issuer: ${reverse-proxy-uri}/auth/realms/labs
 card-service-client-id: card-service
-card-service-client-secret: secret
+card-service-client-secret: ${CARD_SERVICE_CLIENT_SECRET:secret}
 
 server:
   port: 8082
@@ -55,9 +55,9 @@ spring:
       include-message: always
   rabbitmq:
     host: ${cn}
-    port: 5672
-    username: rest-api
-    password: secret
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:rest-api}
+    password: ${RABBITMQ_PASSWORD:secret}
 
 rest-hero:
   events:
@@ -147,9 +147,9 @@ spring:
     activate:
       on-profile: postgresql
   datasource:
-    url: jdbc:postgresql://host.docker.internal:2634/cards
+    url: jdbc:postgresql://host.docker.internal:${CARDS_DB_PORT:2634}/cards
     username: rest-api
-    password: secret
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 ---
