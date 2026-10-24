@@ -85,6 +85,10 @@
             <artifactId>rest-hero-starter-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.c4soft.resthero</groupId>
+            <artifactId>rest-hero-problem</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>com.c4-soft.springaddons</groupId>

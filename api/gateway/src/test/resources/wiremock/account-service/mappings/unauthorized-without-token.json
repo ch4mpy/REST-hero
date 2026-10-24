@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "ANY",
+    "urlPattern": "/.*",
+    "headers": {
+      "Authorization": {
+        "absent": true
+      }
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "WWW-Authenticate": "Bearer",
+      "Content-Type": "application/problem+json"
+    },
+    "jsonBody": {
+      "type": "urn:rest-hero:problem:unauthenticated",
+      "title": "Unauthorized",
+      "status": 401,
+      "detail": "Authentication is required",
+      "instance": "/accounts"
+    }
+  }
+}

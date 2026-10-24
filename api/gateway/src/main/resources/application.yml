@@ -86,7 +86,9 @@ spring:
       enabled: false
   web:
     error:
-      include-message: always
+      # Exceptions nothing handles reach /error: their message is for the logs (an unreachable
+      # Keycloak names its internal URL, for instance). Handled problems carry their own detail.
+      include-message: never
   rabbitmq:
     host: ${cn}
     port: ${RABBITMQ_PORT:5672}
@@ -123,12 +125,13 @@ com:
         client:
           client-uri: ${reverse-proxy-uri}
           pkce-forced: true
+          # the SPA's paths of the reverse proxy's origin (quoted: a dot of the host matches a dot only)
           post-login-allowed-uri-patterns:
-            - ${reverse-proxy-uri}/ui(/.*)?
+            - \Q${reverse-proxy-uri}/ui\E(/.*)?
           post-login-redirect-host: ${reverse-proxy-uri}
           post-login-redirect-path: /ui/
           post-logout-allowed-uri-patterns:
-            - ${reverse-proxy-uri}/ui(/.*)?
+            - \Q${reverse-proxy-uri}/ui\E(/.*)?
           post-logout-redirect-host: ${reverse-proxy-uri}
           post-logout-redirect-path: /ui/
           security-matchers:
@@ -136,27 +139,54 @@ com:
             - /oauth2/**
             - /logout/**
             - /bff/**
-            - /me
+            - /me/**
+          # What anonymous requests may reach, listed explicitly; anything else needs a session
+          # (the SSE stream, /bff/events, among them). With resourceserver.permit-all below, the
+          # whole list.
           permit-all:
+            # Routes relayed downstream (spring.cloud.gateway.server.webmvc.routes): their access
+            # control belongs to the downstream service. Every route's Path= must be here
+            # (AnonymousAccessConfigurationTest).
+            - /bff/accounts/**
+            - /bff/transfers/**
+            - /bff/cards/**
+            - /bff/customers/**
+            - /bff/currencies/**
+            # Gateway endpoints that work without a session
+            - /me
             - /login/**
             - /oauth2/**
-            - /logout/connect/back-channel/bff
-            - /bff/**
-            - /me
+            # without a session, a logout has no effect, and the SPA ends up logged out anyway
+            - /logout
+            # the registration's id is gateway: the back-channel logout endpoint is named after it
+            - /logout/connect/back-channel/gateway
           csrf: cookie-accessible-from-js
           # the CSRF cookie must be accessible to both the BFF and the SPA code
           # while not colliding with other apps CSRF cookies
           csrf-cookie-path: /
+          # A session cookie the gateway no longer knows (browser reopened, session expired, gateway
+          # restarted). On /me only, a new session is opened and the request proceeds as without a
+          # cookie: the session probe answers anonymous. Every other route gets the 401
+          # unauthenticated problem of the gateway's own invalid-session strategy, never a
+          # redirection, and opens no session (com.c4soft.resthero.gateway.security.ProblemSecurityConfiguration).
+          invalid-session:
+            pass-through-patterns:
+              - /me
           oauth2-redirections:
-            authentication-entry-point: UNAUTHORIZED
+            # no authentication-entry-point: the gateway's own entry point replaces spring-addons'
+            # (401 unauthenticated problem, com.c4soft.resthero.gateway.security.ProblemSecurityConfiguration)
             pre-authorization-code: OK
             rp-initiated-logout: ACCEPTED
           back-channel-logout:
             enabled: true
             internal-logout-uri: ${reverse-proxy-uri}${server.servlet.context-path}/logout/connect/back-channel/gateway
+        # The rest of the anonymous list (see client.permit-all); everything else outside the
+        # client's security-matchers needs a token, which only the actuator serves
         resourceserver:
           permit-all:
             - /actuator/health
+            # error dispatches are authorized like any request (com.c4soft.resthero.problem.ApiErrorController)
+            - /error
             # This endpoint is exposed only with the Maven "openapi" profile
             - /v3/api-docs
 

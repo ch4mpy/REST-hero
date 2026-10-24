@@ -189,11 +189,9 @@
                 <version>${nullaway.version}</version>
             </dependency>
 
-            <dependency>
-                <groupId>org.wiremock</groupId>
-                <artifactId>wiremock</artifactId>
-                <version>${wiremock.version}</version>
-            </dependency>
+            <!-- org.wiremock:wiremock is not managed here: wiremock-spring-boot brings the version its
+            wiremock-jetty12 is built against, and a managed one breaks its server
+            (AbstractMethodError). The wiremock-maven-plugin names its own, below. -->
             <dependency>
                 <groupId>org.wiremock</groupId>
                 <artifactId>wiremock-standalone</artifactId>

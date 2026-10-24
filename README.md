@@ -2191,7 +2191,11 @@ L'architecture retenue a trois maillons :
 
 Le choix du SSE (plutôt que WebSocket/STOMP) tient aussi à la sécurité déjà en place : le flux SSE est exposé sous
 `/bff/**`, donc protégé par les mêmes cookies de session que le reste du BFF (voir l'introduction), sans complication
-supplémentaire de handshake ni de CSRF puisqu'un abonnement SSE est un simple `GET`.
+supplémentaire de handshake ni de CSRF puisqu'un abonnement SSE est un simple `GET`. La gateway le réserve aux
+sessions authentifiées par deux verrous : son `permit-all` liste une à une les routes relayées aux services (dont le
+contrôle d'accès appartient au service), jamais `/bff/**` en bloc, si bien que `/bff/events` n'y figure pas ; et le
+contrôleur porte `@PreAuthorize("isAuthenticated()")`, qui tient même si la liste s'élargit un jour. Sans session,
+l'abonnement reçoit un `401` de type `unauthenticated`, sans URL de connexion.
 
 Aucune des trois briques n'a besoin de connaître le token `Bearer` de l'utilisateur ni son cookie de session : la
 publication d'un évènement est un aller RabbitMQ interne au backend (authentifié par des identifiants applicatifs,

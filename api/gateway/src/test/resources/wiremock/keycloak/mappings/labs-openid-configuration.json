@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/auth/realms/labs/.well-known/openid-configuration"
+  },
+  "response": {
+    "status": 200,
+    "transformers": ["response-template"],
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "issuer": "{{{request.baseUrl}}}/auth/realms/labs",
+      "authorization_endpoint": "{{{request.baseUrl}}}/auth/realms/labs/protocol/openid-connect/auth",
+      "token_endpoint": "{{{request.baseUrl}}}/auth/realms/labs/protocol/openid-connect/token",
+      "jwks_uri": "{{{request.baseUrl}}}/auth/realms/labs/protocol/openid-connect/certs",
+      "end_session_endpoint": "{{{request.baseUrl}}}/auth/realms/labs/protocol/openid-connect/logout",
+      "subject_types_supported": [
+        "public",
+        "pairwise"
+      ]
+    }
+  }
+}
