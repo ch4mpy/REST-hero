@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +34,7 @@ import com.c4_soft.springaddons.security.oauth2.test.webmvc.AutoConfigureAddonsW
 import com.c4soft.resthero.account.AccountFixtures;
 import com.c4soft.resthero.account.MoneyTransferFixtures;
 import com.c4soft.resthero.account.SecurityConfig;
-import com.c4soft.resthero.account.SpringDataWebConvertersTestConfiguration;
+import com.c4soft.resthero.account.WebConfiguration;
 import com.c4soft.resthero.account.domain.Account;
 import com.c4soft.resthero.account.domain.MoneyTransfer;
 import com.c4soft.resthero.account.jpa.AccountRepository;
@@ -46,7 +47,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = MoneyTransferController.class, properties = {})
 @Import({IbanStringMapper.class, MoneyTransferMapperImpl.class,
-    SpringDataWebConvertersTestConfiguration.class, SecurityConfig.class})
+    WebConfiguration.class, SecurityConfig.class})
 @AutoConfigureAddonsWebmvcResourceServerSecurity
 class MoneyTransferControllerTest {
 
@@ -105,12 +106,14 @@ class MoneyTransferControllerTest {
 
   @Test
   @WithJwt("advisor.json")
-  void givenInvalidTransferFilter_whenListTransfers_thenBadRequest() throws Exception {
+  void givenInvalidTransferFilter_whenListTransfers_thenUnprocessableContent() throws Exception {
     mockMvc
         .perform(
             get("https://localhost" + MoneyTransferController.BASE_PATH)
                 .param("labelContaining", "ab"))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
+        .andExpect(jsonPath("$.invalidFields.labelContaining").exists());
   }
 
   @Test
@@ -233,7 +236,7 @@ class MoneyTransferControllerTest {
   @SuppressWarnings("null")
   @Test
   @WithJwt("card-service.json")
-  void givenInvalidTransferRequest_whenTransferMoney_thenBadRequest() throws Exception {
+  void givenInvalidTransferRequest_whenTransferMoney_thenUnprocessableContent() throws Exception {
     Account source = AccountFixtures.createCustomersXpfAccount(100000);
     Account destination = AccountFixtures.createCustomersXpfAccount(50000);
 
@@ -253,7 +256,9 @@ class MoneyTransferControllerTest {
                                 1000,
                                 "XPF",
                                 "label"))))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
+        .andExpect(jsonPath("$.invalidFields.sourceIban").exists());
 
     mockMvc
         .perform(
@@ -268,7 +273,9 @@ class MoneyTransferControllerTest {
                                 1000,
                                 "XPF",
                                 "label"))))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
+        .andExpect(jsonPath("$.invalidFields.destinationIban").exists());
 
     mockMvc
         .perform(
@@ -283,7 +290,9 @@ class MoneyTransferControllerTest {
                                 -1,
                                 "XPF",
                                 "label"))))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
+        .andExpect(jsonPath("$.invalidFields.amount").exists());
 
     mockMvc
         .perform(
@@ -298,7 +307,9 @@ class MoneyTransferControllerTest {
                                 1000,
                                 "XPFX",
                                 "label"))))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
+        .andExpect(jsonPath("$.invalidFields.currency").exists());
 
     mockMvc
         .perform(
@@ -313,7 +324,9 @@ class MoneyTransferControllerTest {
                                 1000,
                                 "XPF",
                                 "la"))))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
+        .andExpect(jsonPath("$.invalidFields.label").exists());
   }
 
   @Test

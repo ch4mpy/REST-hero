@@ -1,17 +1,19 @@
 package com.c4soft.resthero.customer.keycloak;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.keycloak.admin.api.UsersApi;
 import org.keycloak.admin.model.UserRepresentation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientException;
 import com.c4soft.resthero.customer.domain.Customer;
+import com.c4soft.resthero.problem.ApiProblemException;
+import com.c4soft.resthero.problem.ProblemType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -57,7 +59,8 @@ public class CustomerRepository {
           users.size() < pageable.getPageSize() && pageable.getPageNumber() == 0 ? users.size()
               : countUsers(search))
           .map(mapper::map);
-    } catch (HttpClientErrorException e) {
+    } catch (RestClientException e) {
+      // Keycloak's answer is for the logs, never for the client
       log
           .error(
               "Error while retrieving Keycloak's users page {} (size {}) with {}: {}",
@@ -65,30 +68,40 @@ public class CustomerRepository {
               pageable.getPageSize(),
               search,
               e.getMessage());
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "Error while counting Keycloak's users page %d (size %d) with %s: %s"
-              .formatted(pageable.getPageNumber(), pageable.getPageSize(), search, e.getMessage()));
+      throw identityProviderError("The identity provider could not list the customers");
     }
   }
 
   public Customer save(Customer customer) {
     if (customer.getId() != null) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "User update is not supported");
+      throw new UnsupportedOperationException("User update is not supported");
     }
     try {
       final var response = usersApi
           .adminRealmsRealmUsersPost(
               apiProperties.getRealmName(),
               Optional.of(mapper.map(customer)));
-      var pathParts = response.getHeaders().getLocation().getPath().split("/");
+      final var location = response.getHeaders().getLocation();
+      if (location == null) {
+        log
+            .error(
+                "Keycloak created user {} without saying where (no Location header)",
+                customer.getEmail());
+        throw identityProviderError("The identity provider created the customer without its ID");
+      }
+      var pathParts = location.getPath().split("/");
       return new Customer(
           pathParts[pathParts.length - 1],
           customer.getFirstName(),
           customer.getLastName(),
           customer.getEmail());
-    } catch (HttpClientErrorException e) {
-      // FIXME: handle 409 conflict when user already exists
+    } catch (HttpClientErrorException.Conflict e) {
+      log.warn("Keycloak already has a user with email {}", customer.getEmail());
+      throw new ApiProblemException(
+          ProblemType.CUSTOMER_ALREADY_EXISTS,
+          "A customer with email %s already exists".formatted(customer.getEmail()),
+          Map.of("email", customer.getEmail())).unchecked();
+    } catch (RestClientException e) {
       log
           .error(
               "Error while creating Keycloak's user {} {} {}: {}",
@@ -96,14 +109,7 @@ public class CustomerRepository {
               customer.getFirstName(),
               customer.getLastName(),
               e.getMessage());
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "Error while creating Keycloak's user %s %s %s: %s"
-              .formatted(
-                  customer.getEmail(),
-                  customer.getFirstName(),
-                  customer.getLastName(),
-                  e.getMessage()));
+      throw identityProviderError("The identity provider could not create the customer");
     }
   }
 
@@ -112,15 +118,20 @@ public class CustomerRepository {
       final var response = usersApi
           .adminRealmsRealmUsersUserIdGet(apiProperties.getRealmName(), id, Optional.empty());
       return Optional.ofNullable(response.getBody()).map(mapper::map);
-    } catch (HttpClientErrorException e) {
-      if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
-        return Optional.empty();
-      }
+    } catch (HttpClientErrorException.NotFound e) {
+      return Optional.empty();
+    } catch (RestClientException e) {
       log.error("Error while retrieving Keycloak's user with id {}: {}", id, e.getMessage());
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "Error while retrieving Keycloak's user with id %s: %s".formatted(id, e.getMessage()));
+      throw identityProviderError("The identity provider could not retrieve the customer");
     }
+  }
+
+  /**
+   * The repository's methods are called from controllers' transactions and from converters, where a
+   * checked exception cannot be declared: the problem goes up unchecked.
+   */
+  private static RuntimeException identityProviderError(String detail) {
+    return new ApiProblemException(ProblemType.IDENTITY_PROVIDER_ERROR, detail, Map.of()).unchecked();
   }
 
   Integer countUsers(String search) {
@@ -143,11 +154,9 @@ public class CustomerRepository {
               Optional.empty());
 
       return response.getBody() == null ? 0 : response.getBody();
-    } catch (HttpClientErrorException e) {
+    } catch (RestClientException e) {
       log.error("Error while counting Keycloak's users with {}: {}", search, e.getMessage());
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "Error while counting Keycloak's users with %s: %s".formatted(search, e.getMessage()));
+      throw identityProviderError("The identity provider could not count the customers");
     }
   }
 }

@@ -3,6 +3,7 @@ package com.c4soft.resthero.customer.web;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
@@ -27,15 +28,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.events.DomainEvent;
 import com.c4soft.resthero.commons.events.ResourceType;
-import com.c4soft.resthero.commons.exception.ResourceNotFoundException;
 import com.c4soft.resthero.customer.domain.Beneficiary;
 import com.c4soft.resthero.customer.domain.Customer;
 import com.c4soft.resthero.customer.jpa.BeneficiaryRepository;
 import com.c4soft.resthero.customer.keycloak.CustomerRepository;
+import com.c4soft.resthero.problem.ApiProblemException;
+import com.c4soft.resthero.problem.ProblemType;
 import io.micrometer.observation.annotation.Observed;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -149,8 +150,11 @@ public class CustomerController {
    * @param customer
    * @param dto Neither IBAN nor label can be used for this customer
    * @return a response with a Location header pointing to the created beneficiary
+   * @throws ApiProblemException {@link ProblemType#BENEFICIARY_IBAN_ALREADY_REGISTERED} or
+   *         {@link ProblemType#BENEFICIARY_LABEL_ALREADY_REGISTERED} when the customer already has
+   *         a beneficiary with this IBAN or a similar label
    */
-  @Transactional(readOnly = false)
+  @Transactional(rollbackFor = ApiProblemException.class)
   @PostMapping(path = BENEFICIARIES_PATH)
   @PreAuthorize("hasAuthority('customer.edit') or #customer.id == authentication.name")
   public ResponseEntity<Void> addBeneficiary(
@@ -158,7 +162,7 @@ public class CustomerController {
           description = "The ID of the customer to retrieve")
       @PathVariable(CUSTOMER_ID_PLACEHOLDER) Customer customer,
       @RequestBody @Valid BeneficiaryRequest dto,
-      Authentication auth) {
+      Authentication auth) throws ApiProblemException {
     final var iban = Iban.of(dto.iban());
     final var label = dto.label().trim();
     final var existingBeneficiaries = beneficiaryRepo.findByCustomerId(customer.getId());
@@ -191,15 +195,16 @@ public class CustomerController {
       @Parameter(schema = @Schema(type = "integer", format = "int64"),
           description = "The ID of the customer to retrieve")
       @PathVariable(BENEFICIARY_ID_PLACEHOLDER) Beneficiary beneficiary)
-      throws ResourceNotFoundException {
+      throws ApiProblemException {
     assertCustomerBeneficiaryConsistency(customer, beneficiary);
     return customerMapper.map(beneficiary);
   }
 
-  @Transactional(readOnly = false)
+  /** A synchronous update, done when the response leaves: {@code 204}, never {@code 202}. */
+  @Transactional(rollbackFor = ApiProblemException.class)
   @PutMapping(path = BENEFICIARY_PATH)
   @PreAuthorize("hasAuthority('customer.edit') or #customer.id == authentication.name")
-  @ResponseStatus(HttpStatus.ACCEPTED)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
   public void updateBeneficiary(
       @Parameter(schema = @Schema(type = "string"),
           description = "The ID of the customer to retrieve")
@@ -208,7 +213,7 @@ public class CustomerController {
           description = "The ID of the customer to retrieve")
       @PathVariable(BENEFICIARY_ID_PLACEHOLDER) Beneficiary beneficiary,
       @RequestBody @Valid BeneficiaryRequest dto,
-      Authentication auth) throws ResourceNotFoundException {
+      Authentication auth) throws ApiProblemException {
     assertCustomerBeneficiaryConsistency(customer, beneficiary);
     var iban = Iban.of(dto.iban());
     var label = dto.label().trim();
@@ -227,10 +232,11 @@ public class CustomerController {
     publishBeneficiaryEvent(beneficiary, DomainEvent.EventType.UPDATE);
   }
 
-  @Transactional(readOnly = false)
+  /** A synchronous deletion, done when the response leaves: {@code 204}, never {@code 202}. */
+  @Transactional(rollbackFor = ApiProblemException.class)
   @DeleteMapping(path = BENEFICIARY_PATH)
   @PreAuthorize("hasAuthority('customer.edit') or #customer.id == authentication.name")
-  @ResponseStatus(HttpStatus.ACCEPTED)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
   public void deleteBeneficiary(
       @Parameter(schema = @Schema(type = "string"),
           description = "The ID of the customer to retrieve")
@@ -238,7 +244,7 @@ public class CustomerController {
       @Parameter(schema = @Schema(type = "integer", format = "int64"),
           description = "The ID of the customer to retrieve")
       @PathVariable(BENEFICIARY_ID_PLACEHOLDER) Beneficiary beneficiary,
-      Authentication auth) throws ResourceNotFoundException {
+      Authentication auth) throws ApiProblemException {
     assertCustomerBeneficiaryConsistency(customer, beneficiary);
     beneficiaryRepo.delete(beneficiary);
     log.info("{} deleted beneficiary {} for customer {}", auth.getName(), beneficiary, customer);
@@ -260,32 +266,42 @@ public class CustomerController {
                 Instant.now()));
   }
 
-  private void assertIbanNotKnown(Stream<Beneficiary> beneficiariesStream, Iban iban) {
+  private void assertIbanNotKnown(Stream<Beneficiary> beneficiariesStream, Iban iban)
+      throws ApiProblemException {
     if (beneficiariesStream.anyMatch(b -> Objects.equals(b.getIban(), iban))) {
       log.warn("The customer already has a beneficiary with IBAN {}", iban);
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "A beneficiary is already registered with IBAN %s".formatted(iban));
+      throw new ApiProblemException(
+          ProblemType.BENEFICIARY_IBAN_ALREADY_REGISTERED,
+          "A beneficiary is already registered with IBAN %s".formatted(iban),
+          Map.of("iban", iban.toHumanReadableString()));
     }
   }
 
-  private void assertLabelNotKnown(Stream<Beneficiary> beneficiariesStream, String label) {
+  private void assertLabelNotKnown(Stream<Beneficiary> beneficiariesStream, String label)
+      throws ApiProblemException {
     final var needle = label.trim().toLowerCase();
     if (beneficiariesStream.anyMatch(b -> Objects.equals(b.getLabel().toLowerCase(), needle))) {
       log.warn("The customer already has a beneficiary with {} as label", needle);
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "A beneficiary is already registered with a label similar to %s".formatted(label));
+      throw new ApiProblemException(
+          ProblemType.BENEFICIARY_LABEL_ALREADY_REGISTERED,
+          "A beneficiary is already registered with a label similar to %s".formatted(label),
+          Map.of("label", label));
     }
   }
 
+  /**
+   * A beneficiary reached through another customer's path is, for that customer, not found: the
+   * same answer as for a beneficiary that does not exist, so that the path leaks nothing.
+   */
   private void assertCustomerBeneficiaryConsistency(Customer customer, Beneficiary beneficiary)
-      throws ResourceNotFoundException {
+      throws ApiProblemException {
     if (!Objects.equals(customer.getId(), beneficiary.getCustomerId())) {
       log.warn("Customer {} and beneficiary {} do not match", customer, beneficiary);
-      throw new ResourceNotFoundException(
+      throw new ApiProblemException(
+          ProblemType.BENEFICIARY_NOT_FOUND,
           "No beneficiary with ID %d for customer %s"
-              .formatted(beneficiary.getId(), customer.getId()));
+              .formatted(beneficiary.getId(), customer.getId()),
+          Map.of("customerId", customer.getId(), "beneficiaryId", beneficiary.getId()));
     }
   }
 }

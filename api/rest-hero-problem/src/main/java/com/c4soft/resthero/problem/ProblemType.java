@@ -55,8 +55,8 @@ public enum ProblemType {
   CUSTOMER_ALREADY_EXISTS(HttpStatus.CONFLICT, "customer-already-exists"),
 
   /**
-   * Parameters: {@code customerId} and {@code beneficiaryId}. The customer has no beneficiary with
-   * this identifier.
+   * Parameters: {@code beneficiaryId}, and {@code customerId} when the path names a customer. The
+   * customer has no beneficiary with this identifier.
    */
   BENEFICIARY_NOT_FOUND(HttpStatus.NOT_FOUND, "beneficiary-not-found"),
 

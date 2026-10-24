@@ -8,8 +8,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -20,29 +22,28 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.server.ResponseStatusException;
 import com.c4_soft.springaddons.security.oauth2.test.annotations.WithJwt;
 import com.c4_soft.springaddons.security.oauth2.test.webmvc.AutoConfigureAddonsWebmvcResourceServerSecurity;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapper;
-import com.c4soft.resthero.commons.exception.CommonExceptionsHandler;
 import com.c4soft.resthero.customer.CustomerFixtures;
 import com.c4soft.resthero.customer.SecurityConfig;
-import com.c4soft.resthero.customer.SpringDataWebConvertersTestConfiguration;
+import com.c4soft.resthero.customer.WebConfiguration;
 import com.c4soft.resthero.customer.domain.Beneficiary;
 import com.c4soft.resthero.customer.domain.Customer;
 import com.c4soft.resthero.customer.jpa.BeneficiaryRepository;
 import com.c4soft.resthero.customer.keycloak.CustomerRepository;
+import com.c4soft.resthero.problem.ApiProblemException;
+import com.c4soft.resthero.problem.ProblemType;
 import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = CustomerController.class, properties = {})
-@Import({IbanStringMapper.class, CustomerMapperImpl.class, CommonExceptionsHandler.class,
-        SpringDataWebConvertersTestConfiguration.class, SecurityConfig.class})
+@Import({IbanStringMapper.class, CustomerMapperImpl.class,
+        WebConfiguration.class, SecurityConfig.class})
 @AutoConfigureAddonsWebmvcResourceServerSecurity
 @SuppressWarnings("null")
 class CustomerControllerTest {
@@ -148,18 +149,22 @@ class CustomerControllerTest {
     void givenExistingCustomer_whenCreateCustomer_thenConflict() throws Exception {
         var dto = new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf");
 
+        // what CustomerRepository throws when Keycloak answers 409
         when(customerRepo.save(any()))
                 .thenThrow(
-                        new ResponseStatusException(
-                                HttpStatus.CONFLICT,
-                                "Customer already exists"));
+                        new ApiProblemException(
+                                ProblemType.CUSTOMER_ALREADY_EXISTS,
+                                "A customer with email jean.bonot@test.pf already exists",
+                                Map.of("email", "jean.bonot@test.pf")).unchecked());
 
         mockMvc
                 .perform(
                         post("https://localhost" + CustomerController.BASE_PATH)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(json.writeValueAsString(dto)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:customer-already-exists"))
+                .andExpect(jsonPath("$.parameters.email").value("jean.bonot@test.pf"));
     }
 
     @Test
@@ -444,7 +449,7 @@ class CustomerControllerTest {
                                                         new BeneficiaryRequest(
                                                                 "FR761111222233334444",
                                                                 "Taxes"))))
-                .andExpect(status().isAccepted());
+                .andExpect(status().isNoContent());
 
         assertThat(beneficiary.getLabel()).isEqualTo("Taxes");
         assertThat(beneficiary.getIban().toMachineReadableString())
@@ -494,7 +499,7 @@ class CustomerControllerTest {
                                 "https://localhost" + CustomerController.BENEFICIARY_PATH,
                                 customer.getId(),
                                 beneficiary.getId()))
-                .andExpect(status().isAccepted());
+                .andExpect(status().isNoContent());
 
         verify(beneficiaryRepo).delete(beneficiary);
     }

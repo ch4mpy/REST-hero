@@ -77,6 +77,8 @@ La solution est composée d'une interface graphique React interrogeant une API R
 
 - une `gateway`. Les requêtes (du frontend) préfixées avec `/gateway/bff` sont autorisées avec des cookies de session (`http-only=true`) et protégées contre le CSRF (cookie `XSRF-TOKEN` avec `http-only=false` et header `X-XSRF-TOKEN` requis pour pour les requêtes `POST`, `PUT` `PATCH` et `DELETE`). Les requêtes de clients OAuth2 (appels inter-services, Bruno, Postman, ...) préfixées avec `/gateway/m2m` sont autorisées avec un `Bearer` token dans le header `Authorization`.
 - `rest-hero-starter-common` est un starter Spring Boot contenant des classes et de l'auto-configuration partagée.
+- `rest-hero-problem` est un starter Spring Boot qui porte le contrat d'erreur de toutes les applications : les réponses
+  d'erreur en _problem details_ (RFC 9457) dont le `type` est une valeur de l'énumération `ProblemType`.
 - `currency-service` fournit un référentiel des devises supportées et du change sur le fixing veille de la BCE (via [https://frankfurter.dev](https://frankfurter.dev/))
 - `customer-service` responsable des clients et de leurs bénéficiaires. Ce service ne stocke que les bénéficiaires dans sa base de données. Les clients sont des utilisateurs de Keycloak (lecture / écriture via l'API Keycloak).
 - `account-service` responsable des comptes bancaires et des transferts entre comptes.
@@ -771,28 +773,16 @@ public class RestConfiguration {
 
 Il est possible de surcharger le _qualifier_ par défaut lors de la définition d'un bean comme lors de son injection avec `@Qualifier`.
 
-Pour rendre une dépendance optionnelle (on s'attend à ce qu'il soit possible que la configuration de l'application puisse ne pas fournir un bean), typer cette dépendance avec `Optional<T>` :
+Pour rendre une dépendance optionnelle (on s'attend à ce qu'il soit possible que la configuration de l'application puisse ne pas fournir un bean), typer cette dépendance avec `Optional<T>`, ou avec `ObjectProvider<T>` quand il peut y en avoir zéro, un ou plusieurs. Le module `rest-hero-problem` laisse ainsi chaque application déclarer, ou non, des exclusions à son traitement des exceptions :
 
 ```java
-@TestConfiguration
-public class SpringDataWebConvertersTestConfiguration {
-  @Autowired(required = false)
-  Optional<AccountRepository> accountRepo;
+@Configuration(proxyBeanMethods = false)
+public class ProblemWebMvcConfiguration implements WebMvcConfigurer {
+  private final List<ProblemResolutionExclusion> exclusions;
 
-  @Bean
-  WebMvcConfigurer configurer() {
-    return new WebMvcConfigurer() {
-      @Override
-      public void addFormatters(FormatterRegistry registry) {
-        registry
-            .addConverter(
-                String.class,
-                Account.class,
-                iban -> accountRepo
-                    .flatMap(r -> iban == null ? Optional.empty() : r.findByIban(Iban.of(iban)))
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
-      }
-    };
+  public ProblemWebMvcConfiguration(ObjectProvider<ProblemResolutionExclusion> exclusions) {
+    // aucune, une ou plusieurs, dans l'ordre de leur @Order
+    this.exclusions = exclusions.orderedStream().toList();
   }
 }
 ```
@@ -1113,10 +1103,17 @@ Les composants à configurer dans les applications qui l'utilisent sont définis
 ```
 com.c4soft.resthero.commons.CommonWebConfiguration
 com.c4soft.resthero.commons.domain.IbanStringMapper
-com.c4soft.resthero.commons.exception.CommonExceptionsHandler
+com.c4soft.resthero.commons.messaging.EventsRabbitConfiguration
 ```
 
 Lors de la création de starters, il est important d'être peu intrusif et de laisser la main à l'application pour surcharger l'auto-configuration proposée. Les annotations `@ConditionalOn...` telles que `@ConditionalOnMissingBean` et `@ConditionalOnProperty` peuvent alors trouver tout leur intérêt.
+
+Le projet a un second starter, `rest-hero-problem`, qui porte le contrat d'erreur de toutes les applications
+([4.4](#rest-controller-exceptions)). Ses composants ne sont pas dans le _component scan_ des services (ils sont dans le
+package `com.c4soft.resthero.problem`) : c'est le fichier d'imports qui les apporte. Un second fichier,
+`META-INF/spring/org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureWebMvc.imports`, les apporte aussi aux
+tranches de test `@WebMvcTest`, qui n'appliquent pas l'auto-configuration générale : sans lui, un test de contrôleur
+passerait avec des réponses d'erreur différentes de celles de l'application.
 
 ##### T.P.
 
@@ -1631,10 +1628,12 @@ Pour rappel :
   créer. La réponse devrait être en statut `201 Created`, ne pas avoir de _body_ et porter un header `Location` pointant
   vers la ressource créée.
 - `PUT` est attendu pour une modification de ressource existante et devrait porter un _body_ avec les informations de
-  mise à jour. Il est attendu une réponse dans le champ `2xx` sans _body_ (par exemple `202 Accepted` ou `204 No-content`).
+  mise à jour. La réponse est `204 No Content` : la modification est faite quand la réponse part.
 - `DELETE` est attendu pour supprimer une ressource et ne doit pas porter de _body_ (l'URL doit suffire à identifier la
-  ressource à supprimer). Il est attendu une réponse dans le champ `2xx` sans _body_ (par exemple `202 Accepted` ou
-  `204 No-content`).
+  ressource à supprimer). La réponse est `204 No Content`, pour la même raison.
+- `202 Accepted` est réservé aux traitements **asynchrones** : la requête est prise en compte, mais son effet n'est pas
+  encore visible quand la réponse part (un traitement par lot, une file de messages). Le renvoyer sur un `PUT` synchrone
+  ment au client, qui ne sait plus s'il doit relire la ressource ou attendre.
 - `PATCH` est attendu pour la mise à jour partielle d'une ressource (les propriétés manquantes du _body_ sont ignorées).
   Elle est peu usitée et parfois mal supportée par les clients, donc à éviter.
 
@@ -1667,20 +1666,21 @@ Spring Web comporte de nombreux mécanismes de (dé)sérialisation, notamment :
 - JSON (avec Jackson) : convertit les `@RequestBody` et `@ResponseBody`
 - le `FormatterRegistry` : enregistre des convertisseurs à appliquer sur les `@PathVariable` et `@RequestParam`.
 
-Les `JpaRepository<E, ID>` pour les `@Entity` ayant `Integer`, `Long` ou `String` comme type sont enregistrés dans le
-`FormatterRegistry`.
-
-En considérant que `MyEntity` a un `@Id Long id` et qu'il existe un `JpaRepository<MyEntity, Long>`, alors un requête
-`GET /resources/42` est routée sur la fonction suivante où `entity` est l'entité avec l'identifiant `42` :
+Spring Data enregistre dans le `FormatterRegistry` un `DomainClassConverter` pour les `@Entity` dont un
+`JpaRepository<E, ID>` existe (avec `Integer`, `Long` ou `String` comme type d'identifiant). En considérant que
+`MyEntity` a un `@Id Long id` et qu'il existe un `JpaRepository<MyEntity, Long>`, une requête `GET /resources/42` est
+routée sur la fonction suivante où `entity` est l'entité avec l'identifiant `42` :
 
 ```java
 @GetMapping("/resources/{resourceId}")
 Resource getResource(@PathVariable("resourceId") MyEntity entity);
 ```
 
-Il est possible d'ajouter des converters dans le registry en fournissant une `@Configuration` qui implémente
-`WebMvcConfigurer`. Par exemple, pour ajouter une conversion automatique d'un compte depuis son `Iban`
-(`AccountRepository extends JpaRepository<Account, Iban>`):
+Mais quand l'identifiant n'existe pas, ce convertisseur renvoie `null`, et la méthode est appelée avec un argument
+`null` (ou Spring répond `500`). Dans ce projet, **chaque variable de chemin a son convertisseur explicite**, déclaré
+dans une `@Configuration` qui implémente `WebMvcConfigurer`, et qui lève le problème typé de la ressource
+([4.4](#rest-controller-exceptions)) quand elle n'existe pas : le client reçoit un `404` dont le `type` dit **quoi** est
+introuvable. Un `Converter` ne peut pas déclarer d'exception checkée : le problème est levé `.unchecked()`.
 
 ```java
 @Configuration
@@ -1702,7 +1702,13 @@ public class WebConfiguration implements WebMvcConfigurer {
     @Override
     public @Nullable Account convert(@Nullable String source) {
       final var iban = ibanStringMapper.map(source);
-      return iban == null ? null : accountRepo.findByIban(iban).orElse(null);
+      if (iban == null) {
+        return null;
+      }
+      return accountRepo.findByIban(iban).orElseThrow(() -> new ApiProblemException(
+          ProblemType.ACCOUNT_NOT_FOUND,
+          "No account with IBAN %s".formatted(iban.toHumanReadableString()),
+          Map.of("iban", iban.toHumanReadableString())).unchecked());
     }
   }
 }
@@ -1778,6 +1784,15 @@ public @interface CurrencyIso3 {
 Je recommande de laisser passer `null` et de combiner les annotations avec `@NotNull` pour rendre un paramètre /
 attribut obligatoire.
 
+Une violation est une erreur du **client**, pas du serveur : la réponse est `422 Unprocessable Content`, en
+`application/problem+json`, de type `validation`, avec une propriété `invalidFields` qui associe à chaque champ fautif
+le code de la contrainte violée (c'est ce que le frontend affiche sous le champ). Trois exceptions portent ces
+violations, selon ce qui est validé : `MethodArgumentNotValidException` (un `@RequestBody @Valid`),
+`HandlerMethodValidationException` (un `@RequestParam` ou une `@PathVariable` annotés) et
+`ConstraintViolationException` (une validation hors contrôleur). Le module `rest-hero-problem` les traduit toutes les
+trois ([4.4](#rest-controller-exceptions)) ; le test de contrôleur vérifie le `422`, le `type` et le champ nommé dans
+`invalidFields`, pas un vague `4xx`.
+
 ##### T.P.
 
 Initialisation :
@@ -1803,23 +1818,62 @@ Les exceptions sont interceptées dans deux cas principaux :
 - on souhaite la contourner (il y a un _plan B_ pour continuer le traitement)
 - on souhaite la mapper vers un autre type d'exception (exception technique traduite en exception métier)
 
-Les `@ExceptionHandler` déclarés dans un `@RestControllerAdvice` servent intercepter des exceptions et à définir la
-réponse à envoyer :
+Ce qui sort d'une API REST en cas d'erreur est un **contrat** au même titre que les réponses nominales : le client doit
+pouvoir distinguer les cas sans lire un message en anglais. Ce projet suit la [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
+(_problem details_) avec un module partagé, `rest-hero-problem` (un starter, voir [2.7](#spring-boot-starter)) :
+
+- `ProblemType` est une énumération **fermée** des types de problèmes de l'application : les génériques
+  (`unauthenticated`, `access-denied`, `not-found`, `invalid-request`, `validation`, `server-error`...) et les types
+  métier (`account-not-found`, `beneficiary-iban-already-registered`, `card-transaction-ceiling-exceeded`...). Chaque
+  type a un statut HTTP et une URN (`urn:rest-hero:problem:account-not-found`) qui sert de **clef de traduction** au
+  frontend ;
+- `ApiProblemDetail` porte le `type`, le statut, un `detail` technique (en anglais, pour les logs et le développeur) et
+  des `parameters` **typés** (l'IBAN refusé, le plafond dépassé, le montant...) avec lesquels le frontend compose le
+  message localisé ;
+- `ApiProblemException` est une exception **checkée** : une méthode de contrôleur qui la lève le déclare dans sa clause
+  `throws`, et son `@Transactional` porte `rollbackFor = ApiProblemException.class` (par défaut, Spring ne fait le
+  rollback que sur les `RuntimeException`). Là où une checkée ne peut pas être déclarée (un `Converter`, une lambda),
+  `.unchecked()` l'enveloppe dans une `ApiProblemRuntimeException` que le handler déballe ;
+- `ApiExceptionHandler`, un `@RestControllerAdvice`, écrit les `ApiProblemDetail` des `ApiProblemException` et des
+  trois exceptions de validation (en `422`, avec les `invalidFields`, voir [4.3](#rest-controller-validation)) ;
+  `DataAccessProblemHandler` traduit les conflits JPA (`409`) ; un `HandlerExceptionResolver` et le contrôleur `/error`
+  servent de filet pour tout le reste (rejets du framework en `400 invalid-request`, erreurs inattendues en
+  `500 server-error`, dont le détail reste dans les logs).
+
+```java
+@Transactional(rollbackFor = ApiProblemException.class)
+@PostMapping(BASE_PATH)
+public ResponseEntity<Void> createAccount(@RequestBody @Valid AccountCreationRequest dto) throws ApiProblemException {
+  final var iban = Iban.of(dto.iban());
+  if (accountRepo.existsByIban(iban)) {
+    throw new ApiProblemException(
+        ProblemType.ACCOUNT_ALREADY_MANAGED,
+        "The account-service already manages account %s".formatted(iban.toHumanReadableString()),
+        Map.of("iban", iban.toHumanReadableString()));
+  }
+  // ...
+}
+```
+
+Les `@ExceptionHandler` déclarés dans un `@RestControllerAdvice` interceptent les exceptions et définissent la réponse à
+envoyer. C'est l'annotation `@RestControllerAdvice` qui les rend visibles à **tous** les contrôleurs :
 
 ```java
 @RestControllerAdvice
-public class CommonExceptionsHandler {
+public class ApiExceptionHandler {
 
-  @ExceptionHandler(DataIntegrityViolationException.class)
-  public ResponseEntity<ProblemDetail> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
-    final var detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-    return ResponseEntity.status(detail.getStatus()).body(detail);
+  @ExceptionHandler(ApiProblemException.class)
+  public ResponseEntity<ApiProblemDetail> handleApiProblem(ApiProblemException ex) {
+    return ResponseEntity.status(ex.getType().status())
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(ex.toProblemDetail());
   }
 }
 ```
 
-Lorsque créer et intercepter une exception métier n'a pas d'intérêt intrinsèque, un raccourci est de soulever une
-`ErrorResponseException` pour laquelle Spring fournit déjà un `@ExceptionHandler`.
+À ne **pas** faire : lever une `ResponseStatusException` ou une `ErrorResponseException` avec un message libre. Le
+statut est alors choisi au cas par cas, le `type` est vide, et le message (souvent celui d'une exception technique, SQL
+ou réponse d'un autre service) part tel quel au client. Un type de problème coûte une ligne dans `ProblemType`.
 
 ##### T.P.
 
@@ -1937,25 +1991,29 @@ com:
                 oauth2-registration-id: account-service
 ```
 
-Lors d'une erreur pendant l'appel REST, `RestClient` soulève une `HttpClientErrorException`. Il est fortement recommandé
-d'intercepter de telles erreurs et de les translater vers quelque chose ajoutant des logs et du contexte métier.
+Lors d'une erreur pendant l'appel REST, `RestClient` soulève une `RestClientException` : une
+`HttpClientErrorException` ou `HttpServerErrorException` quand le service répond (chacune a une sous-classe par statut,
+`HttpClientErrorException.NotFound` par exemple), une `ResourceAccessException` quand il ne répond pas. Il faut les
+intercepter **par type** et les traduire en problème de notre contrat ([4.4](#rest-controller-exceptions)) : le cas
+attendu (ici, un client inconnu) devient le type métier qui le décrit ; tout le reste devient
+`DOWNSTREAM_SERVICE_ERROR` (`502`), dont le détail reste dans **nos** logs. La réponse du service aval, son statut et son
+message ne partent jamais au client : ils ne font pas partie de notre contrat.
 
 ```java
-try{
+try {
   customersApi.getCustomer(dto.customerId());
-} catch (HttpClientErrorException e){
-  if (HttpStatus.NOT_FOUND.equals(e.getStatusCode())) {
-    log.warn("Rejecting account {} creation for unknown customer {}",iban, dto.customerId());
-    throw new ResourceNotFoundException("Customer %s is not known by the customer-service".formatted(dto.iban()));
-  }
-  log.error(
-      "Unexpected error while checking customer {} existence in customer-service",
-      dto.customerId(),
-      e);
-  throw new ResponseStatusException(
-      HttpStatus.INTERNAL_SERVER_ERROR,
-      "Unexpected error while checking customer existence",
-      e);
+} catch (HttpClientErrorException.NotFound e) {
+  log.warn("Rejecting account {} creation for unknown customer {}", iban, dto.customerId());
+  throw new ApiProblemException(
+      ProblemType.CUSTOMER_NOT_FOUND,
+      "Customer %s is not known by the customer-service".formatted(dto.customerId()),
+      Map.of("customerId", dto.customerId()));
+} catch (RestClientException e) {
+  log.error("Unexpected error while checking customer {} existence in customer-service", dto.customerId(), e);
+  throw new ApiProblemException(
+      ProblemType.DOWNSTREAM_SERVICE_ERROR,
+      "The customer-service could not confirm that the customer exists",
+      Map.of("service", "customer-service"));
 }
 ```
 

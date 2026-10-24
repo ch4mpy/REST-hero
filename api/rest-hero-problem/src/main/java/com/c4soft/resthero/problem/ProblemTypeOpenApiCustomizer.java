@@ -2,6 +2,7 @@ package com.c4soft.resthero.problem;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.springdoc.core.customizers.OpenApiCustomizer;
@@ -19,7 +20,10 @@ import io.swagger.v3.oas.models.media.StringSchema;
  * Also trims the {@link ApiProblemDetail} schemas: the {@code properties} map inherited from
  * {@link org.springframework.http.ProblemDetail} is never on the wire (extension members are
  * dedicated getters here), and the standard members, which can't be annotated on the parent's
- * getters, are always set.
+ * getters, are always set. Their {@code type} becomes a bare reference to the {@link ProblemType}
+ * schema: springdoc keeps the getter's {@code string}/{@code uri} and an empty {@code default}
+ * next to the {@code $ref}, from which openapi-generator's Java clients write
+ * {@code ProblemType type = ;}, which does not compile.
  * </p>
  *
  * <p>
@@ -59,8 +63,14 @@ public class ProblemTypeOpenApiCustomizer implements OpenApiCustomizer {
     return schema;
   }
 
+  @SuppressWarnings({"rawtypes", "unchecked"})
   private static void trim(Schema<?> schema) {
     schema.getProperties().remove("properties");
+    final var type = schema.getProperties().get("type");
+    if (type != null) {
+      ((Map) schema.getProperties()).put("type",
+          new Schema<>().$ref(ApiProblemDetail.PROBLEM_TYPE_SCHEMA_REF).description(type.getDescription()));
+    }
     final var required = Optional.ofNullable(schema.getRequired()).orElse(List.of());
     STANDARD_MEMBERS.stream().filter(member -> !required.contains(member))
         .forEach(schema::addRequiredItem);

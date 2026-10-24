@@ -47,7 +47,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * @author Jerome Wacongne ch4mp&#64;c4-soft.com
  */
+// LAB:4.4:TODO:START rendre ce handler visible à tous les contrôleurs
 @RestControllerAdvice
+// LAB:4.4:TODO:END
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @Slf4j
 public class ApiExceptionHandler {

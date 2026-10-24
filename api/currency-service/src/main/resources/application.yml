@@ -30,7 +30,7 @@ spring:
             certificate: file:${dev-certs-dir}/${cn}.crt
   web:
     error:
-      include-message: always
+      include-message: never
 
 com:
   c4-soft:
@@ -43,9 +43,9 @@ com:
                 prefix: currency.
         resourceserver:
           permit-all:
+            - /error
             - /actuator/health/readiness
             - /actuator/health/liveness
-            - /actuator/prometheus
             - /v3/api-docs/**
             - /swagger-ui/**
       rest:

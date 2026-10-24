@@ -33,7 +33,7 @@ import com.c4soft.resthero.account.api.MoneyTransfersApi;
 import com.c4soft.resthero.account.model.AccountResponse;
 import com.c4soft.resthero.card.CardFixtures;
 import com.c4soft.resthero.card.SecurityConfig;
-import com.c4soft.resthero.card.SpringDataWebConvertersTestConfiguration;
+import com.c4soft.resthero.card.WebConfiguration;
 import com.c4soft.resthero.card.domain.Card;
 import com.c4soft.resthero.card.domain.CardPayment;
 import com.c4soft.resthero.card.jpa.CardPaymentRepository;
@@ -42,12 +42,11 @@ import com.c4soft.resthero.commons.domain.Amount;
 import com.c4soft.resthero.commons.domain.Currency;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapper;
-import com.c4soft.resthero.commons.exception.CommonExceptionsHandler;
 import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = CardController.class, properties = {})
 @Import({IbanStringMapper.class, CardMapperImpl.class, CardPaymentMapperImpl.class,
-    CommonExceptionsHandler.class, SpringDataWebConvertersTestConfiguration.class,
+    WebConfiguration.class,
     SecurityConfig.class})
 @AutoConfigureAddonsWebmvcResourceServerSecurity
 class CardControllerTest {
@@ -377,7 +376,7 @@ class CardControllerTest {
             put("https://localhost" + CardController.CARD_STATUS_PATH, card.getNumber())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(dto)))
-        .andExpect(status().isAccepted());
+        .andExpect(status().isNoContent());
   }
 
   @Test
@@ -459,7 +458,7 @@ class CardControllerTest {
             put("https://localhost" + CardController.CARD_CEILINGS_PATH, card.getNumber())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(dto)))
-        .andExpect(status().isAccepted());
+        .andExpect(status().isNoContent());
   }
 
   @Test

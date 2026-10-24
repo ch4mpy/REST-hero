@@ -51,7 +51,7 @@ spring:
             certificate: file:${dev-certs-dir}/${cn}.crt
   web:
     error:
-      include-message: always
+      include-message: never
   rabbitmq:
     host: ${cn}
     port: ${RABBITMQ_PORT:5672}
@@ -73,10 +73,9 @@ com:
                 prefix: account.
         resourceserver:
           permit-all:
-            - /accounts/**
+            - /error
             - /actuator/health/readiness
             - /actuator/health/liveness
-            - /actuator/prometheus
             - /v3/api-docs/**
             - /swagger-ui/**
       rest:

@@ -1,11 +1,18 @@
 package com.c4soft.resthero.account.web;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import java.util.List;
 import java.util.Optional;
@@ -15,15 +22,19 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import com.c4_soft.springaddons.security.oauth2.test.annotations.WithJwt;
 import com.c4_soft.springaddons.security.oauth2.test.webmvc.AutoConfigureAddonsWebmvcResourceServerSecurity;
 import com.c4soft.resthero.account.AccountFixtures;
 import com.c4soft.resthero.account.SecurityConfig;
-import com.c4soft.resthero.account.SpringDataWebConvertersTestConfiguration;
+import com.c4soft.resthero.account.WebConfiguration;
 import com.c4soft.resthero.account.domain.Account;
 import com.c4soft.resthero.account.jpa.AccountRepository;
 import com.c4soft.resthero.account.jpa.MoneyTransferRepository;
@@ -39,7 +50,7 @@ import tools.jackson.databind.ObjectMapper;
     IbanStringMapper.class,
     // LAB:2.6:REMOVE:END
     AccountMapperImpl.class, MoneyTransferMapperImpl.class,
-    SpringDataWebConvertersTestConfiguration.class, SecurityConfig.class})
+    WebConfiguration.class, SecurityConfig.class})
 @AutoConfigureAddonsWebmvcResourceServerSecurity
 class AccountControllerTest {
 
@@ -227,7 +238,8 @@ class AccountControllerTest {
                     .getIban()
                     .toMachineReadableString())
                 .contentType(MediaType.APPLICATION_JSON))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:account-not-found"));
   }
 
   @Test
@@ -271,6 +283,66 @@ class AccountControllerTest {
 
     var location = mvcResult.getResponse().getHeader("Location");
     assertThat(location).isNotNull();
+  }
+
+  @Test
+  @WithJwt("advisor.json")
+  void givenTheCustomerServiceDoesNotKnowTheCustomer_whenCreateAccount_thenCustomerNotFound()
+      throws Exception {
+    var iban = AccountFixtures.createCustomersXpfAccount(100000).getIban();
+    var dto = new AccountCreationRequest(
+        iban.toMachineReadableString(),
+        AccountFixtures.CUSTOMER_SUBJECT,
+        "XPF");
+
+    when(accountRepo.existsByIban(any(Iban.class))).thenReturn(false);
+    when(customersApi.getCustomer(AccountFixtures.CUSTOMER_SUBJECT))
+        .thenThrow(
+            HttpClientErrorException
+                .create(HttpStatus.NOT_FOUND, "Not Found", HttpHeaders.EMPTY, new byte[0], UTF_8));
+
+    mockMvc
+        .perform(
+            post("https://localhost" + AccountController.BASE_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(dto)))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:customer-not-found"))
+        .andExpect(jsonPath("$.parameters.customerId").value(AccountFixtures.CUSTOMER_SUBJECT));
+    verify(accountRepo, never()).save(any(Account.class));
+  }
+
+  @Test
+  @WithJwt("advisor.json")
+  void givenTheCustomerServiceFails_whenCreateAccount_thenDownstreamServiceErrorWithoutItsAnswer()
+      throws Exception {
+    var iban = AccountFixtures.createCustomersXpfAccount(100000).getIban();
+    var dto = new AccountCreationRequest(
+        iban.toMachineReadableString(),
+        AccountFixtures.CUSTOMER_SUBJECT,
+        "XPF");
+
+    when(accountRepo.existsByIban(any(Iban.class))).thenReturn(false);
+    when(customersApi.getCustomer(AccountFixtures.CUSTOMER_SUBJECT))
+        .thenThrow(
+            HttpServerErrorException
+                .create(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Internal Server Error",
+                    HttpHeaders.EMPTY,
+                    "the customer-service's own stack trace".getBytes(UTF_8),
+                    UTF_8));
+
+    mockMvc
+        .perform(
+            post("https://localhost" + AccountController.BASE_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(dto)))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:downstream-service-error"))
+        .andExpect(jsonPath("$.parameters.service").value("customer-service"))
+        .andExpect(content().string(not(containsString("stack trace"))));
+    verify(accountRepo, never()).save(any(Account.class));
   }
 
   @Test
