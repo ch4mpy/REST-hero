@@ -52,7 +52,6 @@
         <springdoc-openapi-maven-plugin.version>1.5</springdoc-openapi-maven-plugin.version>
         <integration-tests.scheme>https</integration-tests.scheme>
         <integration-tests.hostname>localhost</integration-tests.hostname>
-        <integration-tests.port>7080</integration-tests.port>
         <spring.profiles.active></spring.profiles.active>
         <springdoc-openapi.output-dir>${project.basedir}/../../frontend/openapi</springdoc-openapi.output-dir>
         <fmt-maven-plugin.version>2.29</fmt-maven-plugin.version>
@@ -275,8 +274,10 @@
                                 <artifactId>therapi-runtime-javadoc-scribe</artifactId>
                             </path>
                             <path>
-                                <groupId>org.hibernate</groupId>
-                                <artifactId>hibernate-jpamodelgen</artifactId>
+                                <!-- the JPA static metamodel (<Entity>_); hibernate-jpamodelgen is now
+                                only a relocation to it -->
+                                <groupId>org.hibernate.orm</groupId>
+                                <artifactId>hibernate-processor</artifactId>
                                 <version>${hibernate.version}</version>
                             </path>
                         </annotationProcessorPaths>

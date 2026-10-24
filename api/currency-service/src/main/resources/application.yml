@@ -6,6 +6,10 @@ reverse-proxy-uri: https://${cn}
 issuer: ${reverse-proxy-uri}/auth/realms/labs
 
 server:
+  # dev: the loopback only; the gateway reaches it through host.docker.internal, which resolves to the
+  # loopback; a management port follows it (ManagementAddressConfiguration); every interface with
+  # demo, below
+  address: 127.0.0.1
   port: 8084
   shutdown: immediate
   ssl:
@@ -57,10 +61,16 @@ management:
     health:
       probes:
         enabled: true
+      # the status and the names of its groups, nothing more
+      show-details: never
+      show-components: never
   endpoints:
     web:
       exposure:
-        include: "*"
+        # health only: its probes are what an orchestrator reads, metrics and traces are pushed by
+        # OTLP (below); a token of the realm is no authorization: any other endpoint (loggers, env,
+        # caches, threaddump...) would be open to whoever holds one
+        include: health
   health:
     livenessstate:
       enabled: true
@@ -118,3 +128,12 @@ management:
     metrics:
       export:
         enabled: false
+---
+# a container deployment: the reverse proxy and the other applications reach it on the container's
+# network address
+spring:
+  config:
+    activate:
+      on-profile: demo
+server:
+  address: 0.0.0.0

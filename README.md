@@ -134,6 +134,8 @@ npm run dev
 
 Pour démarrer les services de l'API depuis un IDE, charger le fichier `.env` dans la run config : il fournit `REST_HERO_CERTS_DIR` (le dossier du certificat) et `SPRING_DATASOURCE_PASSWORD` (le mot de passe des bases).
 
+Les services et la gateway n'écoutent que sur la boucle locale (`server.address: 127.0.0.1`) : aucune autre machine du réseau ne les atteint. Keycloak et le reverse proxy, dans leurs conteneurs, les joignent par `host.docker.internal`, qui pointe sur la boucle locale (Docker Desktop, et l'entrée de `/etc/hosts` ci-dessus). Sous Linux avec Docker Engine, `host.docker.internal` est dans les conteneurs l'adresse du pont Docker, pas la boucle locale : démarrer alors la gateway (et les services que les conteneurs appellent) avec le profil `demo`, qui écoute sur toutes les interfaces (`server.address: 0.0.0.0`).
+
 ## 1. <a name="maven-build"/>Build avec Maven
 
 ### 1.1. <a name="maven-build-intro"/>Introduction
@@ -381,9 +383,6 @@ besoin de récupérer la configuration OpenID du provider, nous utiliserons le `
 ```xml
 <profile>
   <id>openapi</id>
-  <properties>
-    <integration-tests.port>8080</integration-tests.port>
-  </properties>
   <dependencies>
     <dependency>
       <groupId>com.github.therapi</groupId>
@@ -401,76 +400,115 @@ besoin de récupérer la configuration OpenID du provider, nous utiliserons le `
   <build>
     <plugins>
       <plugin>
+        <!-- des ports libres, réservés au moment du build (jamais dans <properties>, figées avant) -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>reserve-network-ports</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>reserve-network-port</goal>
+            </goals>
+            <configuration>
+              <portNames>
+                <portName>keycloak-wiremock.port</portName>
+                <portName>integration-tests.port</portName>
+                <portName>spring-boot-jmx.port</portName>
+              </portNames>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>uk.co.automatictester</groupId>
         <artifactId>wiremock-maven-plugin</artifactId>
         <executions>
           <execution>
-            <id>start-wiremock</id>
-            <phase>pre-integration-test</phase>
+            <id>keycloak-wiremock</id>
             <goals>
               <goal>run</goal>
+              <goal>stop</goal>
             </goals>
             <configuration>
-              <dir>src/test/resources/wiremock</dir>
-              <params>--port=8089</params>
+              <dir>src/test/resources/wiremock/keycloak</dir>
+              <params>--port=${keycloak-wiremock.port}</params>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-maven-plugin</artifactId>
+        <configuration>
+          <apiDocsUrl>${integration-tests.scheme}://${integration-tests.hostname}:${integration-tests.port}/v3/api-docs</apiDocsUrl>
+        </configuration>
+        <executions>
+          <execution>
+            <id>integration-test</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <profiles>h2,no-observability</profiles>
+          <!-- commun à start et stop -->
+          <jmxPort>${spring-boot-jmx.port}</jmxPort>
+        </configuration>
+        <executions>
+          <execution>
+            <id>pre-integration-test</id>
+            <goals>
+              <goal>start</goal>
+            </goals>
+            <configuration>
+              <arguments>
+                <argument>--issuer=http://localhost:${keycloak-wiremock.port}/auth/realms/labs</argument>
+                <argument>--server.port=${integration-tests.port}</argument>
+              </arguments>
             </configuration>
           </execution>
           <execution>
-            <id>stop-wiremock</id>
-            <phase>post-integration-test</phase>
+            <id>post-integration-test</id>
             <goals>
               <goal>stop</goal>
             </goals>
           </execution>
         </executions>
       </plugin>
-      <plugin>
-          <groupId>org.springdoc</groupId>
-          <artifactId>springdoc-openapi-maven-plugin</artifactId>
-          <configuration>
-            <apiDocsUrl>${integration-tests.scheme}://${integration-tests.hostname}:${integration-tests.port}/v3/api-docs</apiDocsUrl>
-          </configuration>
-          <executions>
-            <execution>
-              <id>integration-test</id>
-              <goals>
-                <goal>generate</goal>
-              </goals>
-            </execution>
-          </executions>
-      </plugin>
-      <plugin>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-maven-plugin</artifactId>
-          <configuration>
-            <profiles>h2</profiles>
-          </configuration>
-          <executions>
-            <execution>
-              <id>pre-integration-test</id>
-              <goals>
-                <goal>start</goal>
-              </goals>
-              <configuration>
-                <arguments>
-                  <argument>--issuer=http://localhost:8089/auth/realms/labs</argument>
-                </arguments>
-                <environmentVariables>
-                  <!--SERVER_SSL_ENABLED>false</SERVER_SSL_ENABLED-->
-                </environmentVariables>
-              </configuration>
-            </execution>
-            <execution>
-              <id>post-integration-test</id>
-              <goals>
-                <goal>stop</goal>
-              </goals>
-            </execution>
-          </executions>
-      </plugin>
     </plugins>
   </build>
 </profile>
+```
+
+Aucun port n'est figé : le `build-helper-maven-plugin` réserve trois ports libres au moment du build (celui de WireMock,
+celui de l'application, celui de JMX par lequel le goal `stop` arrête l'application), et chaque plugin les lit. Un
+port fixe (8081, 8089...) échoue dès qu'une autre application l'occupe : le service lancé depuis l'IDE, un second
+build en parallèle, un autre projet. Les ports réservés ne sont jamais déclarés dans les `<properties>` du pom : Maven
+les y figerait avant que la réservation ne les fixe. Le plugin est déclaré en premier : dans la phase
+`pre-integration-test`, il s'exécute avant WireMock et le démarrage de l'application.
+
+Comme le port de WireMock change à chaque build, sa réponse de découverte OpenID ne peut pas écrire l'URL de l'émetteur
+en dur : elle la compose avec le _response templating_ de WireMock, à partir de l'URL de la requête.
+
+```json
+{
+  "request": { "method": "GET", "url": "/auth/realms/labs/.well-known/openid-configuration" },
+  "response": {
+    "status": 200,
+    "transformers": ["response-template"],
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "issuer": "{{{request.baseUrl}}}/auth/realms/labs",
+      "jwks_uri": "{{{request.baseUrl}}}/auth/realms/labs/protocol/openid-connect/certs"
+    }
+  }
+}
 ```
 
 ##### T.P.
