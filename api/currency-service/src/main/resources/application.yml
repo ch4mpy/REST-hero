@@ -1,4 +1,7 @@
 cn: host.docker.internal
+# the dev certificate (${cn}.crt and ${cn}.key) is read outside the jar: an absolute path,
+# written in .env by build-0-env.sh (the IDE loads .env; build-openapi.sh sources it)
+dev-certs-dir: ${REST_HERO_CERTS_DIR}
 reverse-proxy-uri: https://${cn}
 issuer: ${reverse-proxy-uri}/auth/realms/labs
 
@@ -21,10 +24,10 @@ spring:
       pem:
         self-signed:
           keystore:
-            certificate: classpath:${cn}.crt
-            private-key: classpath:${cn}.key
+            certificate: file:${dev-certs-dir}/${cn}.crt
+            private-key: file:${dev-certs-dir}/${cn}.key
           truststore:
-            certificate: classpath:${cn}.crt
+            certificate: file:${dev-certs-dir}/${cn}.crt
   web:
     error:
       include-message: always

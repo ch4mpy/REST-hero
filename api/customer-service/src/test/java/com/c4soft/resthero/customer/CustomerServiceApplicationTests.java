@@ -20,7 +20,7 @@ import com.c4soft.resthero.customer.web.CustomerController;
 import com.c4soft.resthero.customer.web.CustomerResponse;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "server.ssl.enabled=false")
 @ActiveProfiles("h2")
 @Import(MockedOAuth2ClientTestConfiguration.class)
 @AutoConfigureMockMvc

@@ -3,3 +3,6 @@
 *.jks
 *.key
 *.p12
+*.password.txt
+*_req.pem
+ca-certificates/

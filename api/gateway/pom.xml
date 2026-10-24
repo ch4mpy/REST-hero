@@ -197,7 +197,8 @@
             </resource>
             <!-- LAB:1.6:REMOVE:END -->
             <resource>
-                <directory>../../certs</directory>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
             </resource>
         </resources>
     </build>

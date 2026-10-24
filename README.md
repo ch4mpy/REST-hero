@@ -108,10 +108,12 @@ bash ./deploy-dev.sh
 sdk env install
 nvm install --lts
 nvm use
-cd api && mvn install -Popenapi,h2 && cd ..
+./build-openapi.sh
 git submodule init && git submodule update
 cd frontend && npm i && npm run api && cd ..
 ```
+
+`build-openapi.sh` charge le fichier `.env` (écrit par `build-0-env.sh`) avant de lancer Maven : les services lisent leur certificat dans le dossier désigné par `REST_HERO_CERTS_DIR`, pas dans leur jar (voir [1.6](#maven-build-resources-handling)).
 
 Dans [Keycloak](https://host.docker.internal/auth/admin/master/console/#/labs/realm-settings/email), éditer le mot de passe SMTP avec la valeur de `secrets/mail/password.txt`.
 
@@ -128,7 +130,7 @@ Pour démarrer le front depuis le répertoire `frontend`:
 npm run dev
 ```
 
-Pour démarrer les services de l'API depuis un IDE, surcharger la propriété `spring.datasource.password` avec la valeur du fichier `/secrets/rest-api/postgres_password.txt` dans une run config.
+Pour démarrer les services de l'API depuis un IDE, charger le fichier `.env` dans la run config (il fournit `REST_HERO_CERTS_DIR`, le dossier du certificat), et surcharger la propriété `spring.datasource.password` avec la valeur du fichier `secrets/rest-api/postgres_password.txt`.
 
 ## 1. <a name="maven-build"/>Build avec Maven
 
@@ -596,7 +598,12 @@ Retour à la branche principale après T.P.
 ### 1.6. <a name="maven-build-resources-handling"/>Manipulation des ressources
 
 Par défaut, Maven utilise les ressources de `src/main/resources` et `src/test/resources` telles quelles. Il est possible
-de modifier ce comportement dans le `build`. Par exemple :
+de modifier ce comportement dans le `build`. Dès qu'un bloc `<resources>` est déclaré, il **remplace** les répertoires
+par défaut au lieu de les compléter : il faut alors y lister aussi `src/main/resources`.
+
+Un répertoire de ressources peut aussi être _filtré_ : Maven y remplace des expressions par la valeur de ses propriétés
+(`project.version`, `project.artifactId`, etc.). Le parent de Spring Boot change le délimiteur en `@...@` pour que ces
+expressions ne se confondent pas avec les placeholders `${...}` de Spring.
 
 ```xml
 <resources>
@@ -604,10 +611,51 @@ de modifier ce comportement dans le `build`. Par exemple :
     <directory>src/main/resources</directory>
   </resource>
   <resource>
-    <directory>../../certs</directory>
+    <directory>src/main/resources-filtered</directory>
+    <filtering>true</filtering>
   </resource>
 </resources>
 ```
+
+```properties
+# src/main/resources-filtered/META-INF/rest-hero-build.properties
+build.artifact=@project.artifactId@
+build.version=@project.version@
+```
+
+#### Jamais de clé privée dans un jar
+
+Ce que contient un jar se copie, se publie et s'embarque dans des images : un jar ne doit contenir **ni clé privée, ni
+keystore, ni mot de passe de keystore**. Une version précédente de ce support déclarait le dossier `certs/` comme
+répertoire de ressources pour lire le certificat dans le classpath : la clé privée de développement se retrouvait alors
+dans chaque jar. Ce n'est plus le cas, de deux manières :
+
+- Les services lisent leur certificat et sa clé dans un dossier extérieur au jar, désigné par la variable
+  d'environnement `REST_HERO_CERTS_DIR` (`build-0-env.sh` l'écrit dans `.env`) :
+
+```yml
+dev-certs-dir: ${REST_HERO_CERTS_DIR}
+spring:
+  ssl:
+    bundle:
+      pem:
+        self-signed:
+          keystore:
+            certificate: file:${dev-certs-dir}/${cn}.crt
+            private-key: file:${dev-certs-dir}/${cn}.key
+```
+
+- Le build le vérifie. Le pom parent déclare, pour tous ses modules, une exécution de `maven-antrun-plugin` en phase
+  `verify` qui lance `api/jar-content-check.xml` sur le jar produit, et échoue en nommant chaque entrée interdite
+  (`*.key`, `*.jks`, `*.p12`, `password.txt`, ou un fichier PEM contenant une clé privée) :
+
+```
+jar-content-check: .../currency-service-0.0.1-SNAPSHOT.jar contains a private key, a keystore or a keystore password, which must never be packaged:
+BOOT-INF/classes/leaked.key
+```
+
+  On retire alors le fichier du module, jamais la vérification. Les images construites par Spring Boot ne reçoivent que
+  le certificat (dossier `certs/ca-certificates`), sans clé.
 
 ##### T.P.
 
