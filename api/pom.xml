@@ -44,7 +44,7 @@
         <java.version>25</java.version>
         <spring-cloud.version>2025.1.2</spring-cloud.version>
 
-        <com.c4-soft.springaddons.version>9.1.5</com.c4-soft.springaddons.version>
+        <com.c4-soft.springaddons.version>9.5.2</com.c4-soft.springaddons.version>
 
         <openapi-generator-maven-plugin.version>7.22.0</openapi-generator-maven-plugin.version>
         <swagger-annotations.version>2.2.50</swagger-annotations.version>
@@ -56,6 +56,7 @@
         <spring.profiles.active></spring.profiles.active>
         <springdoc-openapi.output-dir>${project.basedir}/../../frontend/openapi</springdoc-openapi.output-dir>
         <fmt-maven-plugin.version>2.29</fmt-maven-plugin.version>
+        <nullability-maven-plugin.version>0.3.0</nullability-maven-plugin.version>
         <mapstruct.version>1.7.0.Beta1</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <therapi.version>0.15.0</therapi.version>
@@ -78,6 +79,7 @@
 
     <modules>
         <module>rest-hero-starter-common</module>
+        <module>rest-hero-problem</module>
         <module>currency-service</module>
         <module>customer-service</module>
         <module>account-service</module>
@@ -100,6 +102,11 @@
             <dependency>
                 <groupId>com.c4soft.resthero</groupId>
                 <artifactId>rest-hero-starter-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.c4soft.resthero</groupId>
+                <artifactId>rest-hero-problem</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -361,6 +368,13 @@
                             </goals>
                         </execution>
                     </executions>
+                </plugin>
+                <plugin>
+                    <!-- Error Prone and NullAway on the @NullMarked packages of a module that applies its
+                    configure goal; managed here, applied by the modules that are ready for it. -->
+                    <groupId>am.ik.maven</groupId>
+                    <artifactId>nullability-maven-plugin</artifactId>
+                    <version>${nullability-maven-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>uk.co.automatictester</groupId>

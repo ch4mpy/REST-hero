@@ -277,6 +277,9 @@
                                         <argument>
                                             --issuer=http://${integration-tests.hostname}:8089/auth/realms/labs
                                         </argument>
+                                        <!-- the specs need no broker: the listeners stay down -->
+                                        <argument>--spring.rabbitmq.listener.simple.auto-startup=false</argument>
+                                        <argument>--spring.rabbitmq.listener.direct.auto-startup=false</argument>
                                     </arguments>
                                     <environmentVariables>
                                         <!--SERVER_SSL_ENABLED>false</SERVER_SSL_ENABLED-->

@@ -1,0 +1,2 @@
+# adds the problem components to the @WebMvcTest slices
+com.c4soft.resthero.problem.ProblemAutoConfiguration
