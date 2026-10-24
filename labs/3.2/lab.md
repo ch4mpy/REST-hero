@@ -10,7 +10,7 @@ un générateur explicite sur les bases utilisées dans ce projet.
 
 ## Consignes
 
-Lancer `./lab.sh 3.2` pour créer la branche `lab/3.2`.
+Lancer `./start-lab.sh 3.2` pour créer la branche `lab/3.2`.
 
 1. Lancer `mvn -pl account-service test -Dtest=AccountServiceApplicationTests -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater l'échec lors de la sauvegarde d'un compte : l'identifiant `id` n'est plus généré automatiquement.

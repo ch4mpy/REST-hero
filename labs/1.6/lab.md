@@ -11,7 +11,7 @@ veut continuer à le voir copié.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.6` pour créer la branche `lab/1.6`.
+Lancer `./start-lab.sh 1.6` pour créer la branche `lab/1.6`.
 
 1. Lancer `mvn -pl gateway -am clean package -DskipTests`. Le build réussit (`BUILD SUCCESS`), ce qui peut donner
    une fausse impression que tout va bien. Inspecter pourtant le jar produit

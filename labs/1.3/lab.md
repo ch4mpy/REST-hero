@@ -11,7 +11,7 @@ fonctionner, silencieusement, sans erreur de configuration.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.3` pour créer la branche `lab/1.3`.
+Lancer `./start-lab.sh 1.3` pour créer la branche `lab/1.3`.
 
 1. Lancer `mvn -pl account-service -am clean compile` depuis `api/`. Constater l'échec de compilation dès le module
    `rest-hero-starter-common`, avec des erreurs telles que "constructor ... cannot be applied to given types" ou

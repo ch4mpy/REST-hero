@@ -13,7 +13,7 @@ normale, jamais appelée automatiquement.
 
 ## Consignes
 
-Lancer `./lab.sh 2.2` pour créer la branche `lab/2.2`.
+Lancer `./start-lab.sh 2.2` pour créer la branche `lab/2.2`.
 
 1. Lancer `mvn -pl currency-service -am clean compile`. La compilation réussit. Lancer ensuite
    `mvn -pl currency-service -am verify -Popenapi -DskipTests`. Constater l'échec au démarrage :

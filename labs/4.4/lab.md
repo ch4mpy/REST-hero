@@ -10,7 +10,7 @@ réponses renvoyées aux clients REST.
 
 ## Consignes
 
-Lancer `./lab.sh 4.4` pour créer la branche `lab/4.4`.
+Lancer `./start-lab.sh 4.4` pour créer la branche `lab/4.4`.
 
 1. Lancer `mvn -pl card-service test -Dtest=CardControllerTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater que certains cas d'erreur ne reviennent plus avec le bon statut HTTP ni avec un `ProblemDetail`.

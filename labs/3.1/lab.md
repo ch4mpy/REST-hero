@@ -10,7 +10,7 @@ JPA par Hibernate.
 
 ## Consignes
 
-Lancer `./lab.sh 3.1` pour créer la branche `lab/3.1`.
+Lancer `./start-lab.sh 3.1` pour créer la branche `lab/3.1`.
 
 1. Lancer `mvn -pl customer-service -am verify -Popenapi,h2 -DskipTests`. Constater l'échec au démarrage : Hibernate ne
 	considère plus `Beneficiary` comme une entité gérée.

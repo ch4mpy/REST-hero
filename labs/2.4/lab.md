@@ -10,7 +10,7 @@ composant Spring.
 
 ## Consignes
 
-Lancer `./lab.sh 2.4` pour créer la branche `lab/2.4`.
+Lancer `./start-lab.sh 2.4` pour créer la branche `lab/2.4`.
 
 1. Lancer `mvn -pl account-service -am clean compile`. La compilation réussit : rien dans le code n'empêche
    `RestConfiguration` de compiler sans son annotation de classe.

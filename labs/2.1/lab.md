@@ -11,7 +11,7 @@ une dépendance injectée par un mock dans un test, un simple champ ne suffisant
 
 ## Consignes
 
-Lancer `./lab.sh 2.1` pour créer la branche `lab/2.1`.
+Lancer `./start-lab.sh 2.1` pour créer la branche `lab/2.1`.
 
 1. Lancer `mvn -pl account-service -am clean compile` depuis `api/`. Constater l'échec de compilation dans
    `AccountController.java` : `variable accountRepo not initialized in the default constructor` (et de même pour

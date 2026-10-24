@@ -14,7 +14,7 @@ pas ajouté cette dépendance optionnelle.
 
 ## Consignes
 
-Lancer `./lab.sh 2.7` pour créer la branche `lab/2.7`.
+Lancer `./start-lab.sh 2.7` pour créer la branche `lab/2.7`.
 
 1. Ouvrir
    `api/rest-hero-starter-common/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`

@@ -11,7 +11,7 @@ comprendre comment un évènement porte l'information nécessaire à la gateway 
 
 ## Consignes
 
-Lancer `./lab.sh 6.1` pour créer la branche `lab/6.1`.
+Lancer `./start-lab.sh 6.1` pour créer la branche `lab/6.1`.
 
 1. Lancer `mvn -pl account-service clean compile`. Constater l'échec de compilation :
    `package org.springframework.amqp.core does not exist`, `cannot find symbol: class RabbitTemplate` dans

@@ -9,7 +9,7 @@ le rôle de `@ManyToOne` et `@JoinColumn`, et reconnaître un objet valeur embar
 
 ## Consignes
 
-Lancer `./lab.sh 3.3` pour créer la branche `lab/3.3`.
+Lancer `./start-lab.sh 3.3` pour créer la branche `lab/3.3`.
 
 1. Lancer `mvn -pl card-service test -Dtest=CardPaymentRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater l'échec au moment de persister un paiement de carte : la relation vers la carte n'est plus modélisée

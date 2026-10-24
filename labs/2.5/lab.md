@@ -10,7 +10,7 @@ s'il n'est pas lui-même un bean Spring proxifiable.
 
 ## Consignes
 
-Lancer `./lab.sh 2.5` pour créer la branche `lab/2.5`.
+Lancer `./start-lab.sh 2.5` pour créer la branche `lab/2.5`.
 
 1. Ouvrir `CardController.java` (`card-service`) et repérer la classe imbriquée statique
    `TransactionalCardPaymentHelper`, injectée dans `CardController` et utilisée pour exécuter certaines opérations

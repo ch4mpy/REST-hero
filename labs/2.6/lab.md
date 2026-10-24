@@ -10,7 +10,7 @@ explicitement avec `@Import`, sans quoi le contexte de test échoue à se charge
 
 ## Consignes
 
-Lancer `./lab.sh 2.6` pour créer la branche `lab/2.6`.
+Lancer `./start-lab.sh 2.6` pour créer la branche `lab/2.6`.
 
 1. Ouvrir `AccountControllerTest.java` (`account-service`) et observer sa structure : `@WebMvcTest(controllers =
    AccountController.class)` ne charge qu'une tranche réduite du contexte (le contrôleur et l'infrastructure web),

@@ -10,7 +10,7 @@ signature.
 
 ## Consignes
 
-Lancer `./lab.sh 3.6` pour créer la branche `lab/3.6`.
+Lancer `./start-lab.sh 3.6` pour créer la branche `lab/3.6`.
 
 1. Lancer `mvn -pl card-service -am compile`. Constater l'échec de compilation dans `CardRepository.java` : la méthode
 	de recherche par IBAN n'existe plus dans le repository JPA bas niveau.

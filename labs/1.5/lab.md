@@ -10,7 +10,7 @@ des interfaces `@HttpExchange` sont générées ici, sans classe d'implémentati
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.5` pour créer la branche `lab/1.5`.
+Lancer `./start-lab.sh 1.5` pour créer la branche `lab/1.5`.
 
 1. Lancer `mvn -pl card-service -am clean compile`. Constater l'échec de compilation dans `CardController.java` et
    `RestConfiguration.java` : `cannot find symbol` pour `AccountsApi`, `MoneyTransfersApi` et

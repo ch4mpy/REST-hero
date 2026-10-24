@@ -10,7 +10,7 @@ utilise une conversion Spring implicite.
 
 ## Consignes
 
-Lancer `./lab.sh 4.5` pour créer la branche `lab/4.5`.
+Lancer `./start-lab.sh 4.5` pour créer la branche `lab/4.5`.
 
 1. Lancer `mvn -pl account-service -am verify -Popenapi,h2 -DskipTests`.
 	Constater que la documentation OpenAPI générée pour la route de consultation d'un virement est incomplète.

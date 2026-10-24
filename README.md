@@ -89,6 +89,7 @@ Pré-requis :
 - [Git](https://git-scm.com/install/). Sur Windows, Git Bash avec Mingw. Toujours sous Windows, installer [7-zip](https://www.7-zip.fr/download.html) et créer une copie de`7z.exe` nommée `zip.exe`.
 - [nvm](https://www.nvmnode.com/fr/guide/download.html)
 - [SDKMan](https://sdkman.io/install/)
+- [Python 3](https://www.python.org/downloads/) (`python3` dans le `PATH`), pour les scripts de génération des TPs (`labs/scripts`)
 - Docker ou [Docker Desktop](https://docs.docker.com/desktop/)
 - une entrée `127.0.0.1 host.docker.internal` dans `/etc/hosts` (`C:\windows\system32\drivers\etc\hosts` sous Windows)
 - un IDE : [Eclipse STS](https://spring.io/tools#eclipse) et [Visual Studio Code](https://code.visualstudio.com/download) (avec des plugins pour React) ou IntelliJ Ultimate
@@ -205,25 +206,25 @@ Retour à la branche principale après T.P.
 #### 1.1.2. <a name="maven-build-phases"/>Phases
 
 - **_validate_** : intégrité des POMs
-- _initialize_ :
-- _generate-sources_ :
-- _process-sources_ :
-- _generate-resources_ :
-- _process-resources_ :
-- **_compile_** :
-- _process-classes_ :
-- _generate-test-sources_ :
-- _process-test-sources_ :
-- _generate-test-resources_ :
-- _process-test-resources_ :
-- _test-compile_ :
-- _process-test-classes_ :
+- _initialize_ : initialisation de l'état du build (propriétés, répertoires de travail)
+- _generate-sources_ : génération de code source (par exemple les interfaces `@HttpExchange` de `openapi-generator-maven-plugin`)
+- _process-sources_ : traitement des sources avant compilation
+- _generate-resources_ : génération de ressources
+- _process-resources_ : copie (et filtrage éventuel) des ressources dans `target/classes`
+- **_compile_** : compilation de `src/main/java`, processeurs d'annotations compris (Lombok, MapStruct, etc.)
+- _process-classes_ : post-traitement des classes compilées
+- _generate-test-sources_ : génération de code source pour les tests
+- _process-test-sources_ : traitement des sources de test avant compilation
+- _generate-test-resources_ : génération de ressources de test
+- _process-test-resources_ : copie des ressources de test dans `target/test-classes`
+- _test-compile_ : compilation de `src/test/java`
+- _process-test-classes_ : post-traitement des classes de test compilées
 - **_test_** : exécution des tests unitaires
-- _prepare-package_ :
+- _prepare-package_ : dernières préparations avant l'assemblage
 - **_package_** : assemblage du jar / war
-- _pre-integration-test_ :
-- _integration-test_ :
-- _post-integration-test_ :
+- _pre-integration-test_ : préparation de l'environnement des tests d'intégration (le profil `openapi` y démarre WireMock et l'application)
+- _integration-test_ : exécution de ce qui a besoin de l'application démarrée (le profil `openapi` y télécharge la spec OpenAPI)
+- _post-integration-test_ : nettoyage de l'environnement des tests d'intégration (arrêt de l'application)
 - **_verify_** : assertions sur l'état de sortie de l'environnement de build (peu utilisé)
 - **_install_** : copie des packages dans le repo local
 - **_deploy_** : export des packages sur le repo distant
@@ -269,7 +270,7 @@ Dépendances utilisées durant les TPs:
 - `spring-boot-starter-actuator` : liveness et readiness probes
 - `spring-boot-starter-opentelemetry`, `opentelemetry-logback-appender-1.0` et `spring-boot-starter-aspectj` :
   observabilité avec logging et `@Observed`
-- `spring-boot-starter-restclient`, `spring-boot-starter-oauth2-client` et `spring-addons-starter-rest` : consomation
+- `spring-boot-starter-restclient`, `spring-boot-starter-oauth2-client` et `spring-addons-starter-rest` : consommation
   d'un service REST distant autorisé avec OAuth2 (utilisateurs dans Keycloak via son Admin API)
 - `spring-cloud-dependencies`et `spring-cloud-starter-gateway-server-webmvc` : Gateway pour routage avec `TokenRelay`
 - `swagger-annotations` : documentation OpenAPI
@@ -538,7 +539,7 @@ Il faut ensuite l'exécuter dans chaque module avec :
         <inputSpec>${project.basedir}/../keycloak-admin-api.openapi.json</inputSpec>
         <apiPackage>org.keycloak.admin.api</apiPackage>
         <modelPackage>org.keycloak.admin.model</modelPackage>
-        <!-- prevent a name colllision between the
+        <!-- prevent a name collision between the
         deprecated authTime (Integer) and the new auth_time
         (Long) in IDToken -->
         <nameMappings>auth_time=authTimeLong</nameMappings>
@@ -595,7 +596,7 @@ Retour à la branche principale après T.P.
 ### 1.6. <a name="maven-build-resources-handling"/>Manipulation des ressources
 
 Par défaut, Maven utilise les ressources de `src/main/resources` et `src/test/resources` telles quelles. Il est possible
-de modifier ce comportement dans le `buils`. Par exemple :
+de modifier ce comportement dans le `build`. Par exemple :
 
 ```xml
 <resources>
@@ -1098,7 +1099,7 @@ Son `@Id` correspond à la clef primaire de la table.
 
 Elle doit avoir un constructeur par défaut (sans paramètre) dont la visibilité peut être restreinte.
 
-Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `hasCode` à la (ou aux) propriété (s) `@Id`.
+Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `hashCode` à la (ou aux) propriété(s) `@Id`.
 
 ```java
 @Entity
@@ -1145,10 +1146,10 @@ Retour à la branche principale après T.P.
 H2 et PostgreSQL utilisent les séquences pour les identifiants numériques auto-générés (pas de PK auto-incrémentée comme
 MySQL par exemple).
 
-`@GenratedValue` indique qu'une valeur est fournie par la BDD lors du 1er enregistrement d'une entité. Elle est associée
+`@GeneratedValue` indique qu'une valeur est fournie par la BDD lors du 1er enregistrement d'une entité. Elle est associée
 à `@Id` et doit référencer un générateur (dans le cas de H2 ou de PostgreSQL, une séquence).
 
-Les séquences sont décrites avec `@Generator`.
+Les séquences sont décrites avec `@SequenceGenerator`.
 
 ```java
 @Id
@@ -1417,12 +1418,12 @@ Retour à la branche principale après T.P.
 
 Les opérations d'accès aux données en base se font à l'intérieur d'une transaction.
 
-On utilise `@Transactionnal` pour déclarer qu'une méthode doit être exécutée à l'intérieur d'une transaction.
+On utilise `@Transactional` pour déclarer qu'une méthode doit être exécutée à l'intérieur d'une transaction.
 
 Les relations (`@OneToMany`, `@OneToOne`, etc.) étant _lazy_ par défaut, il faut parcourir le graphe d'objet à
 l'intérieur de la transaction dans laquelle la racine a été récupérée.
 
-Le plus simple est généralement de décorer les méthodes de `@Controller` avec `@Transactionnal`, mais la logique métier
+Le plus simple est généralement de décorer les méthodes de `@Controller` avec `@Transactional`, mais la logique métier
 demande parfois plus de finesse (différentes méthodes exécutées dans des transactions différentes pour que certaines
 soient `commit` alors que d'autres sont `rollback`).
 
@@ -1904,17 +1905,21 @@ try{
 }
 ```
 
-    ##### T.P.
-    Initialisation :
-    ```bash
-    ./start-lab.sh 4.6
-    ```
-    Retour à la branche principale après T.P.
-    ```bash
-    ./exit-lab.sh --keep
-    # ou pour restaurer l'état initial du TP
-    ./exit-lab.sh --reset
-    ```
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 4.6
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
 
 ### 4.7. <a name="rest-controller-logging"/>Logs
 
@@ -1997,33 +2002,18 @@ Pour activer la mise en cache dans l'application :
 </dependency>
 ```
 
-````java
+```java
 @Configuration
 @EnableCaching
 public class CacheConfiguration {
   // Nécessaire seulement pour spring.cache.type=simple (Caffeine et autres caches managés par Boot fournissent leur CacheManager)
   @Bean
-
-##### T.P.
-Initialisation :
-```bash
-./start-lab.sh 5
-````
-
-Retour à la branche principale après T.P.
-
-```bash
-./exit-lab.sh --keep
-# ou pour restaurer l'état initial du TP
-./exit-lab.sh --reset
+  CacheManager cacheManager() {
+    return new ConcurrentMapCacheManager();
+  }
+}
 ```
 
-CacheManager cacheManager() {
-return new ConcurrentMapCacheManager();
-}
-}
-
-````
 ```yml
 spring:
   cache:
@@ -2034,7 +2024,7 @@ spring:
     type: caffeine
     caffeine:
       spec: expireAfterWrite=60m
-````
+```
 
 Pour déclarer un ou plusieurs caches, on décore généralement une classe :
 
@@ -2059,9 +2049,25 @@ Lorsqu'une classe expose une interface publique plus importante que nécessaire,
 gestion des caches. Je recommande dans ce cas de faire un proxy n'exposant que le strict nécessaire et de gérer les caches
 à ce niveau.
 
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 5
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
+
 ## 6. <a name="messaging"/>Messagerie asynchrone et notifications temps réel
 
-Nous étudions ici le méchanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans rafraîchissement de page ni polling.
+Nous étudions ici le mécanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans rafraîchissement de page ni polling.
 
 L'architecture retenue a trois maillons :
 
@@ -2169,13 +2175,15 @@ pouvoir être notifié de ses évolutions.
 Initialisation :
 
 ```bash
-./lab.sh 6.1
+./start-lab.sh 6.1
 ```
 
-Retour à la branche principale après T.P. :
+Retour à la branche principale après T.P.
 
 ```bash
-git switch main
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
 ```
 
 ### 6.2. <a name="messaging-gateway-sse"/>Relais par la gateway : RabbitMQ vers Server-Sent Events
@@ -2236,7 +2244,7 @@ public void broadcast(DomainEvent event) {
 }
 ```
 
-La gateway n'a besoin d'aucune connaissance métier pour ça : elle ne que comparer
+La gateway n'a besoin d'aucune connaissance métier pour ça : elle ne fait que comparer
 des chaînes de caractères (`subject`, rôles).
 
 `@PreAuthorize("isAuthenticated()")` garantit un 401 plutôt qu'un
@@ -2257,7 +2265,7 @@ public SseEmitter subscribeToServerStateChangedEvents(Authentication auth) {
 }
 ```
 
-L'annotation `@ApiResponse` est nécessaire pour documenter ce flux dans la spec OpenAPI : `SseEmitter` n'est un type générique Java (`ServerSentEvent<DomainEvent>`).
+L'annotation `@ApiResponse` est nécessaire pour documenter ce flux dans la spec OpenAPI : `SseEmitter` n'est pas un type générique Java (`ServerSentEvent<DomainEvent>`).
 
 Enfin, le relais proprement dit : un `@RabbitListener` reçoit l'évènement désérialisé et le diffuse aux abonnés
 concernés :
@@ -2276,18 +2284,20 @@ public void onDomainEvent(DomainEvent event) {
 Initialisation :
 
 ```bash
-./lab.sh 6.2
+./start-lab.sh 6.2
 ```
 
-Retour à la branche principale après T.P. :
+Retour à la branche principale après T.P.
 
 ```bash
-git switch main
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
 ```
 
 ### 6.3. <a name="messaging-frontend"/>Abonnement du frontend
 
-Le front du TP étant une application React utilisant [TANSTACK Query](https://tanstack.com/query/latest), un hook ouvre le flux SSE tant que l'utilisateur est authentifié, et invalide les entrées de cache concernées par le type de ressource reçu plutôt (le type d'évènement n'est pasutilisé) :
+Le front du TP étant une application React utilisant [TANSTACK Query](https://tanstack.com/query/latest), un hook ouvre le flux SSE tant que l'utilisateur est authentifié, et invalide les entrées de cache concernées par le type de ressource reçu (le type d'évènement n'est pas utilisé) :
 
 ```ts
 function invalidateForEvent(
@@ -2355,13 +2365,15 @@ Ce TP n'a pas d'exercice à trous. C'est un TP d'observation.
 Initialisation :
 
 ```bash
-./lab.sh 6.3
+./start-lab.sh 6.3
 ```
 
-Retour à la branche principale après T.P. :
+Retour à la branche principale après T.P.
 
 ```bash
-git switch main
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
 ```
 
 <p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/">

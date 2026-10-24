@@ -11,7 +11,7 @@ l'origine.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.4` pour créer la branche `lab/1.4`.
+Lancer `./start-lab.sh 1.4` pour créer la branche `lab/1.4`.
 
 1. Lancer `mvn verify -pl account-service -am -Popenapi,h2 -DskipTests`. Constater un échec rapide (quelques
    secondes) avec une `ResourceAccessException` / `Connexion refusée` sur

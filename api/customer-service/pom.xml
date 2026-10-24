@@ -225,7 +225,7 @@
                             </inputSpec>
                             <apiPackage>org.keycloak.admin.api</apiPackage>
                             <modelPackage>org.keycloak.admin.model</modelPackage>
-                            <!-- prevent a name colllision between the
+                            <!-- prevent a name collision between the
                             deprecated authTime (Integer) and the new auth_time
                             (Long) in IDToken -->
                             <nameMappings>auth_time=authTimeLong</nameMappings>

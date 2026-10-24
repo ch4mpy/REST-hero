@@ -10,7 +10,7 @@ qu'elle soit effectivement prise en compte par Spring Boot.
 
 ## Consignes
 
-Lancer `./lab.sh 2.3` pour créer la branche `lab/2.3`.
+Lancer `./start-lab.sh 2.3` pour créer la branche `lab/2.3`.
 
 1. Ouvrir `api/account-service/src/main/resources/application.yml` et repérer, dans le document YAML activé par
    le profile `postgresql`, le repère `LAB:2.3` à la place du mot de passe applicatif. Le renseigner avec une

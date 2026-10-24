@@ -10,7 +10,7 @@ métier locale.
 
 ## Consignes
 
-Lancer `./lab.sh 4.6` pour créer la branche `lab/4.6`.
+Lancer `./start-lab.sh 4.6` pour créer la branche `lab/4.6`.
 
 1. Lancer `mvn -pl account-service test -Dtest=AccountControllerTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater qu'une création de compte pour un client inconnu ne se comporte plus comme prévu.
