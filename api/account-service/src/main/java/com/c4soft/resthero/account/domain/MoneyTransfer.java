@@ -1,7 +1,9 @@
 package com.c4soft.resthero.account.domain;
 
+import java.io.Serializable;
 import java.time.Instant;
 import org.hibernate.envers.Audited;
+import org.jspecify.annotations.Nullable;
 import com.c4soft.resthero.commons.domain.Amount;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.jpa.IbanStringAttributeConverter;
@@ -22,6 +24,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
+/** A transfer between two accounts: written once, never changed (no {@code @Version}). */
 @Audited
 @Entity
 @Table(name = "transfers")
@@ -31,21 +34,22 @@ import lombok.ToString;
 @Builder(access = AccessLevel.PROTECTED)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PROTECTED)
-public class MoneyTransfer {
+public class MoneyTransfer implements Serializable {
+  private static final long serialVersionUID = -2914371587330456127L;
 
   @Id
   @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "transferSeq")
   @SequenceGenerator(name = "transferSeq", sequenceName = "transfers_seq", allocationSize = 1)
   @EqualsAndHashCode.Include
   @ToString.Include
-  private Long id;
+  private @Nullable Long id;
 
-  @Column(nullable = false)
+  @Column(name = "source_iban", nullable = false)
   @ToString.Include
   @Convert(converter = IbanStringAttributeConverter.class)
   private Iban sourceIban;
 
-  @Column(nullable = false)
+  @Column(name = "destination_iban", nullable = false)
   @ToString.Include
   @Convert(converter = IbanStringAttributeConverter.class)
   private Iban destinationIban;
@@ -53,10 +57,11 @@ public class MoneyTransfer {
   @Embedded
   private Amount amount;
 
-  @Column(nullable = false)
+  @Column(name = "timestamp", nullable = false)
   @Builder.Default
   private Instant timestamp = Instant.now();
 
+  @Column(name = "label", nullable = false)
   private String label;
 
   public static MoneyTransfer of(

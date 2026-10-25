@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -420,6 +422,26 @@ class CardControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(new CardStatusRequest(false))))
         .andExpect(status().isNotFound());
+  }
+
+  /** Another request changed the card in the meantime: the save loses the optimistic lock. */
+  @Test
+  @WithJwt("advisor.json")
+  void givenAConcurrentUpdate_whenSetCardStatus_thenConcurrentModificationProblem() throws Exception {
+    var card = CardFixtures.createCustomersCard(1000, 5000);
+    when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
+    when(cardRepo.save(any(Card.class)))
+        .thenThrow(new ObjectOptimisticLockingFailureException(Card.class, card.getNumber()));
+
+    mockMvc
+        .perform(
+            put("https://localhost" + CardController.CARD_STATUS_PATH, card.getNumber())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(new CardStatusRequest(!card.isActive()))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:concurrent-modification"))
+        .andExpect(jsonPath("$.parameters.entity").value("Card"))
+        .andExpect(jsonPath("$.parameters.id").value(card.getNumber()));
   }
 
   // ===================== setCardCeilings =====================

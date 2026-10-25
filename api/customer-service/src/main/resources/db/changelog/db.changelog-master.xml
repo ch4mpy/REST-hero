@@ -82,4 +82,8 @@
                                  referencedColumnNames="rev" referencedTableName="revinfo"/>
     </changeSet>
 
+    <!-- LAB:3.10:TODO:START inclure le changelog qui renomme la table des bénéficiaires et rend ses contraintes uniques par client -->
+    <include file="changes/1792864800000-1-beneficiaries-renamed-unique-per-customer.xml" relativeToChangelogFile="true"/>
+    <!-- LAB:3.10:TODO:END -->
+
 </databaseChangeLog>

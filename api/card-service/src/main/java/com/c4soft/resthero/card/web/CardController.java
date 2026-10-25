@@ -254,7 +254,7 @@ public class CardController {
             card.getNumber(),
             card.getCeilings(),
             newCeilings);
-    card.setCeilings(newCeilings);
+    card.changeCeilings(newCeilings);
     cardRepo.save(card);
     log.info("{} changed card {} ceilings to {}", auth.getName(), card.getNumber(), newCeilings);
 
@@ -517,7 +517,7 @@ public class CardController {
               payment.getId(),
               payment.getCard().getNumber(),
               payment.getDestinationIban());
-      payment.setAccepted(true);
+      payment.accept();
       final var acceptedPayment = paymentRepo.save(payment);
       log.debug("Saved card payment {} as accepted", acceptedPayment.getId());
       return acceptedPayment;

@@ -224,8 +224,7 @@ public class CustomerController {
         .toList();
     assertIbanNotKnown(otherBeneficiaries.stream(), iban);
     assertLabelNotKnown(otherBeneficiaries.stream(), label);
-    beneficiary.setIban(iban);
-    beneficiary.setLabel(label);
+    beneficiary.update(iban, label);
     beneficiaryRepo.save(beneficiary);
     log.info("{} updated beneficiary {} for customer {}", auth.getName(), beneficiary, customer);
 

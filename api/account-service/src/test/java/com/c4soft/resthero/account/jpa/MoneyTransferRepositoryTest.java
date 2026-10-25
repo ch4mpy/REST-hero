@@ -18,7 +18,7 @@ import com.c4soft.resthero.commons.domain.Currency;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapperImpl;
 
-@DataJpaTest
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @ActiveProfiles("h2")
 @Import({IbanStringMapperImpl.class})
 class MoneyTransferRepositoryTest {

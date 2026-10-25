@@ -49,6 +49,7 @@ Ce support de TPs répond à des exigences de production avancées. Les services
   - [3.7. Spécifications JPA](#jpa-specifications)
   - [3.8. Transactions](#jpa-transactions)
   - [3.9. Hibernate Envers](#jpa-envers)
+  - [3.10. Migrations de schéma avec Liquibase](#jpa-liquibase)
 - [4. Services REST WebMvc avec Spring Boot](#rest-controller)
   - [4.1. `@RequestMapping`](#rest-controller-request-mapping)
   - [4.2. Convertisseurs automatiques de Spring](#rest-controller-converters)
@@ -1190,6 +1191,13 @@ Elle doit avoir un constructeur par défaut (sans paramètre) dont la visibilit�
 
 Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `hashCode` à la (ou aux) propriété(s) `@Id`.
 
+Une entité expose ses propriétés en lecture (`@Getter`), pas en écriture : pas de `@Data` ni de `@Setter`. Elle change
+par des **méthodes métier** nommées comme ce qui arrive dans le domaine (`activate()`, `changeCeilings(...)`,
+`credit(...)`), qui gardent ses invariants : un setter laisse n'importe quel appelant la mettre dans un état interdit
+(un compte crédité dans une autre devise). Hibernate (accès par les champs) et MapStruct n'ont pas besoin de setters.
+Une entité modifiée après sa création porte un `@Version` : deux mises à jour concurrentes ne s'écrasent pas, la seconde
+échoue (`409 concurrent-modification`, voir [4.4](#rest-controller-exceptions)).
+
 ```java
 @Entity
 @Table(name = "cards")
@@ -1199,16 +1207,25 @@ Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `h
 @Builder(access = AccessLevel.PROTECTED)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PROTECTED)
-public class Card {
+public class Card implements Serializable {
 
   @Id
+  @Column(name = "number")
   @EqualsAndHashCode.Include
   @ToString.Include
   private String number;
 
-  @Column(nullable = false)
-  @ToString.Include
-  private String accountNumber;
+  @Version
+  @Column(name = "version", nullable = false)
+  private long version;
+
+  @Column(name = "active", nullable = false)
+  @Builder.Default
+  private boolean active = false;
+
+  public void activate() {
+    this.active = true;
+  }
 
   // ...
 }
@@ -1626,6 +1643,85 @@ Initialisation :
 
 ```bash
 ./start-lab.sh 3.9
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
+
+### 3.10. <a name="jpa-liquibase"/>Migrations de schéma avec Liquibase
+
+Les tables ne sont jamais créées par Hibernate (`spring.jpa.hibernate.ddl-auto: none`) : le schéma est décrit par des
+**changesets** Liquibase, que l'application applique au démarrage (`spring.liquibase.change-log`). Liquibase note dans la
+table `databasechangelog` chaque changeset appliqué, avec une somme de contrôle : il n'applique un changeset qu'une fois,
+et refuse de démarrer si un changeset déjà appliqué a été modifié.
+
+D'où la règle : **un changeset appliqué ne se modifie jamais**. Pour changer le schéma, on ajoute un changeset, dans un
+nouveau fichier inclus après les autres :
+
+```xml
+<databaseChangeLog ...>
+    <!-- les changesets déjà appliqués, inchangés -->
+    <changeSet id="1785605112050-1" author="ch4mp">...</changeSet>
+
+    <include file="changes/1792864800000-1-beneficiaries-renamed-unique-per-customer.xml"
+             relativeToChangelogFile="true"/>
+</databaseChangeLog>
+```
+
+Exemple : la table des bénéficiaires s'appelait `benficiaries`, avec une contrainte unique sur le libellé seul et une
+autre sur l'IBAN seul, si bien que deux clients ne pouvaient pas avoir chacun un bénéficiaire « Maman ». Le changelog
+de `customer-service` qui corrige cela renomme les tables, remplace les contraintes par des contraintes **par client**
+et ajoute la colonne de `@Version` :
+
+```xml
+<changeSet id="1792864800000-3" author="ch4mp">
+    <renameTable oldTableName="benficiaries" newTableName="beneficiaries"/>
+    <renameTable oldTableName="benficiaries_aud" newTableName="beneficiaries_aud"/>
+</changeSet>
+<changeSet id="1792864800000-6" author="ch4mp">
+    <dropUniqueConstraint tableName="beneficiaries" constraintName="uc_43f2eae19d0eabc0cf5df4d4d"/>
+    <dropUniqueConstraint tableName="beneficiaries" constraintName="uc_a5c37d5691418578ecd3de5fc"/>
+    <addUniqueConstraint tableName="beneficiaries" columnNames="iban, customer_id"
+                         constraintName="uc_beneficiaries_iban_customer_id"/>
+    <addUniqueConstraint tableName="beneficiaries" columnNames="label, customer_id"
+                         constraintName="uc_beneficiaries_label_customer_id"/>
+</changeSet>
+<changeSet id="1792864800000-7" author="ch4mp">
+    <addColumn tableName="beneficiaries">
+        <column name="version" type="BIGINT" defaultValueNumeric="0">
+            <constraints nullable="false"/>
+        </column>
+    </addColumn>
+</changeSet>
+```
+
+Quelques points d'attention :
+
+- **Une même migration pour plusieurs bases.** Les tests et le profil `h2` utilisent H2, la production PostgreSQL. Tous
+  les changements Liquibase ne sont pas supportés partout (H2 refuse `renameSequence` et l'`incrementBy` de
+  `alterSequence`) : l'attribut `dbms` d'un changeset le réserve à une base, et un changeset frère dit la même chose
+  à l'autre.
+- **Les tables d'audit d'Envers.** Une révision de suppression (`revtype = 2`) n'enregistre que l'identifiant : les
+  colonnes métier d'une table `_aud` doivent accepter `null`, sinon la suppression elle-même échoue.
+- **Les séquences.** Une séquence qui avance de 50 alors que l'entité réserve ses identifiants un par un
+  (`allocationSize = 1`) donne des trous, et la validation du schéma la refuse.
+
+Le schéma est vérifié par les tests : `@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")` démarre
+Liquibase sur une base H2 vide, puis Hibernate compare chaque entité au schéma obtenu (tables, colonnes, types,
+séquences) et refuse de démarrer à la moindre différence. Les contraintes que la validation ne voit pas (unicité,
+nullabilité des tables d'audit) ont leurs propres tests (`BeneficiaryPersistenceTest`, `BeneficiaryRepositoryTest`).
+
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 3.10
 ```
 
 Retour à la branche principale après T.P.

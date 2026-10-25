@@ -132,4 +132,6 @@
                                  referencedColumnNames="rev" referencedTableName="revinfo"/>
     </changeSet>
 
+    <include file="changes/1792864800000-1-versioned-cards-nullable-audit.xml" relativeToChangelogFile="true"/>
+
 </databaseChangeLog>
