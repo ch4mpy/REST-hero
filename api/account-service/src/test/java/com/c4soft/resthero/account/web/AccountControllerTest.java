@@ -253,6 +253,18 @@ class AccountControllerTest {
         .andExpect(status().isUnauthorized());
   }
 
+  /**
+   * The security chain refuses an anonymous request before the body is read: were the path in the
+   * chain's permit-all, the validation would answer first (422), before @PreAuthorize.
+   */
+  @Test
+  @WithAnonymousUser
+  void givenAnonymousUser_whenCreateAccountWithAnInvalidBody_thenUnauthorized() throws Exception {
+    api
+        .post(creationRequest("not-an-iban", null, "XX"), AccountController.BASE_PATH)
+        .andExpect(status().isUnauthorized());
+  }
+
   @Test
   @WithJwt("customer.json")
   void givenUserDoesNotHaveAccountCreateAuthority_whenCreateAccount_thenForbidden()

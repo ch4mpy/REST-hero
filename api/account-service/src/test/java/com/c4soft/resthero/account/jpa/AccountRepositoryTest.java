@@ -73,12 +73,17 @@ class AccountRepositoryTest {
   @DirtiesContext
   void whenFindStoredByIbanTwice_thenTheDatabaseIsReadTwiceAndNothingIsCached() {
     final var iban = customerXpfAccount.getIban();
+    final var unknownIban = Iban.of("FR762222333344445555");
     accountRepo.findStoredByIban(iban);
     accountRepo.findStoredByIban(iban);
+    accountRepo.findStoredByIban(unknownIban);
 
     verify(jpaAccountRepo, times(2)).findByIban(iban);
+    // neither the known account nor the unknown IBAN went into the cache
     accountRepo.findByIban(iban);
+    accountRepo.findByIban(unknownIban);
     verify(jpaAccountRepo, times(3)).findByIban(iban);
+    verify(jpaAccountRepo, times(2)).findByIban(unknownIban);
   }
 
   @Test

@@ -71,8 +71,11 @@ class CardRepositoryTest {
     cardService.findStoredByNumber("unknown");
 
     verify(jpaCardRepo, times(2)).findById(cardNumber);
+    // neither the known card nor the unknown number went into the cache
     cardService.findByNumber(cardNumber);
+    cardService.findByNumber("unknown");
     verify(jpaCardRepo, times(3)).findById(cardNumber);
+    verify(jpaCardRepo, times(2)).findById("unknown");
   }
 
   @Test

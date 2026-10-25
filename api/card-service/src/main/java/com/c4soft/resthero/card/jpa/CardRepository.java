@@ -21,6 +21,10 @@ public class CardRepository {
 
   private final JpaCardRepository cardRepo;
 
+  /**
+   * A card read through the cache, which the caching lab (5) works on. Requests resolve their card
+   * past the cache ({@link #findStoredByNumber}).
+   */
   @Cacheable(cacheNames = CARD_BY_NUMBER_CACHE)
   public Optional<Card> findByNumber(String number) {
     return cardRepo.findById(number);

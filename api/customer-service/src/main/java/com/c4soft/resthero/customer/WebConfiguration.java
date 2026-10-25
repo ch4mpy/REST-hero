@@ -66,10 +66,11 @@ public class WebConfiguration implements WebMvcConfigurer {
       } catch (NumberFormatException e) {
         throw notFound(source);
       }
-      return repo.findById(id).orElseThrow(() -> notFound(source));
+      // the canonical ID ("3" for "03"), as the controller writes it for another customer's
+      // beneficiary: the two answers are the same
+      return repo.findById(id).orElseThrow(() -> notFound(id.toString()));
     }
 
-    // the customer is not known here: the controller adds it when the beneficiary is another's
     private static RuntimeException notFound(String beneficiaryId) {
       return new ApiProblemException(
           ProblemType.BENEFICIARY_NOT_FOUND,

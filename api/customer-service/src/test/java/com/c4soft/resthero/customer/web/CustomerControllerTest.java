@@ -457,6 +457,20 @@ class CustomerControllerTest {
                 .andExpect(jsonPath("$.parameters.beneficiaryId").value("99"));
     }
 
+    /** A zero-padded ID gets the canonical one back, as for another customer's beneficiary. */
+    @Test
+    @WithJwt("advisor.json")
+    void givenAZeroPaddedUnknownBeneficiaryId_whenGetBeneficiary_thenItsCanonicalIdIsAnswered() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
+        when(beneficiaryRepo.findById(3L)).thenReturn(Optional.empty());
+
+        api
+                .get(CustomerController.BENEFICIARY_PATH, customer.getId(), "03")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No beneficiary with ID 3"))
+                .andExpect(jsonPath("$.parameters.beneficiaryId").value("3"));
+    }
+
     /** Reached through another customer's path, a beneficiary gets the answer of an unknown ID, word for word. */
     @Test
     @WithJwt("advisor.json")

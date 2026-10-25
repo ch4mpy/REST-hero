@@ -128,7 +128,8 @@ done
 ```
 
 Une branche qui compile doit ensuite échouer comme son énoncé l'annonce (lancer la commande de test de son `lab.md`
-dans le dossier temporaire). `6.1` et `6.2` ne compilent pas, par conception : le stagiaire y écrit le code retiré.
+dans le dossier temporaire). Celles dont l'énoncé fait constater un échec de compilation (1.1.1, 1.3, 2.1, 3.5, 3.6,
+3.7, 6.1 et 6.2) ne compilent pas, par conception : vérifier que l'erreur est celle que l'énoncé décrit.
 
 Aucun énoncé ne doit plus citer l'ancien point d'entrée `lab.sh` ; cette commande ne doit rien afficher :
 
