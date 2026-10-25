@@ -13,8 +13,8 @@ import com.c4soft.resthero.problem.ProblemType;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The converter of the card number path variable to the card it names, through the caching
- * repository. It throws the typed problem when there is no such card: Spring Data's
+ * The converter of the card number path variable to the card it names, as stored (not from the
+ * cache: see {@link CardRepository#findStoredByNumber}). It throws the typed problem when there is no such card: Spring Data's
  * {@code DomainClassConverter} would give {@code null}, which the problem resolver can only report
  * as a {@code 500}. A converter can declare no checked exception, so the problem goes up unchecked.
  */
@@ -38,7 +38,7 @@ public class WebConfiguration implements WebMvcConfigurer {
         return null;
       }
       return cardRepo
-          .findByNumber(source)
+          .findStoredByNumber(source)
           .orElseThrow(
               () -> new ApiProblemException(
                   ProblemType.CARD_NOT_FOUND,

@@ -444,7 +444,7 @@ class GatewayProblemsTest {
 
   /**
    * Neither refusal is logged as an error. A guard: MockMvc doesn't dispatch an error to
-   * {@code /error} as the server does, whose log the E2E run checks (AC-3).
+   * {@code /error} as the server does.
    */
   @Test
   void givenRefusedUris_whenLoginAndLogout_thenNoErrorLogged(CapturedOutput output)

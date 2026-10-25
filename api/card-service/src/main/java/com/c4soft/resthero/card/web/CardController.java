@@ -116,22 +116,15 @@ public class CardController {
       account = accountsApi.getAccount(dto.iban()).getBody();
     } catch (HttpClientErrorException.NotFound e) {
       log.warn("{} atempted to create a card for unknown account {}", auth.getName(), dto.iban());
-      throw new ApiProblemException(
-          ProblemType.ACCOUNT_NOT_FOUND,
-          "%s account is not known to the account-service".formatted(dto.iban()),
-          Map.of("iban", dto.iban()));
+      throw accountNotFound(dto.iban());
     } catch (RestClientException e) {
-      // the account service's answer is for the logs, never for the client
       log
           .error(
               "Error while checking account {} existence for user {}",
               dto.iban(),
               auth.getName(),
               e);
-      throw new ApiProblemException(
-          ProblemType.DOWNSTREAM_SERVICE_ERROR,
-          "The account-service could not confirm that the account exists",
-          Map.of("service", "account-service"));
+      throw accountServiceError("The account-service could not confirm that the account exists");
     }
     var iban = Iban.of(dto.iban());
     var existingCards = cardRepo.findByIban(iban);
@@ -406,24 +399,32 @@ public class CardController {
               "Card payment with card {} to account {} rejected because the destination account is not known to the account service",
               card.getNumber(),
               dto.destinationIban());
-      throw new ApiProblemException(
-          ProblemType.ACCOUNT_NOT_FOUND,
-          "Destination account %s is not known to the account-service"
-              .formatted(dto.destinationIban()),
-          Map.of("iban", dto.destinationIban()));
+      throw accountNotFound(dto.destinationIban());
     } catch (RestClientException e) {
-      // the account service's answer is for the logs, never for the client
       log
           .error(
               "Error while checking destination account {} existence for card payment with card {}",
               dto.destinationIban(),
               card.getNumber(),
               e);
-      throw new ApiProblemException(
-          ProblemType.DOWNSTREAM_SERVICE_ERROR,
-          "The account-service could not confirm that the destination account exists",
-          Map.of("service", "account-service"));
+      throw accountServiceError(
+          "The account-service could not confirm that the destination account exists");
     }
+  }
+
+  private static ApiProblemException accountNotFound(String iban) {
+    return new ApiProblemException(
+        ProblemType.ACCOUNT_NOT_FOUND,
+        "Account %s is not known to the account-service".formatted(iban),
+        Map.of("iban", iban));
+  }
+
+  // the account service's answer is for the logs, never for the client: the detail is ours
+  private static ApiProblemException accountServiceError(String detail) {
+    return new ApiProblemException(
+        ProblemType.DOWNSTREAM_SERVICE_ERROR,
+        detail,
+        Map.of("service", "account-service"));
   }
 
   private String resolveAccountOwner(Iban iban) {
@@ -498,7 +499,6 @@ public class CardController {
                         payment.getDestinationIban().toHumanReadableString()));
         transfersApi.transferMoneyBetweenAccounts(body);
       } catch (RestClientException e) {
-        // the account service's answer is for the logs, never for the client
         log
             .error(
                 "Error while transferring money for card payment {} with card {} to account {}: {}",
@@ -506,10 +506,7 @@ public class CardController {
                 payment.getCard().getNumber(),
                 payment.getDestinationIban(),
                 e.getMessage());
-        throw new ApiProblemException(
-            ProblemType.DOWNSTREAM_SERVICE_ERROR,
-            "The account-service could not transfer the money",
-            Map.of("service", "account-service")).unchecked();
+        throw accountServiceError("The account-service could not transfer the money").unchecked();
       }
       log
           .debug(

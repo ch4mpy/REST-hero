@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * ({@link ErrorResponse}: unknown route, unsupported method or media type..., or an unreadable body,
  * a parameter of the wrong type) by its status (see
  * {@link ProblemResponses#forStatus}), any other exception as a {@code 500}
- * {@link ProblemType#SERVER_ERROR} whose details are logged, never sent (SEC-6).
+ * {@link ProblemType#SERVER_ERROR} whose details are logged, never sent.
  *
  * <p>
  * A {@link HandlerExceptionResolver} rather than a {@code @ControllerAdvice}: those only apply to

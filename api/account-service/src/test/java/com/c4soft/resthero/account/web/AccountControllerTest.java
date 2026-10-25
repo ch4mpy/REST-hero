@@ -174,7 +174,7 @@ class AccountControllerTest {
   @WithJwt("advisor.json")
   void givenUserIsAdvisor_whenGetAccountWithAKnownIban_thenOk() throws Exception {
     var account = AccountFixtures.createCustomersXpfAccount(100000);
-    when(accountRepo.findByIban(account.getIban())).thenReturn(Optional.of(account));
+    when(accountRepo.findStoredByIban(account.getIban())).thenReturn(Optional.of(account));
 
     var actual = json
         .readValue(
@@ -193,7 +193,7 @@ class AccountControllerTest {
   @WithJwt("customer.json")
   void givenUserIsCustomer_whenGetAccountWithOneOfHisAccountsIban_thenOk() throws Exception {
     var account = AccountFixtures.createCustomersXpfAccount(100000);
-    when(accountRepo.findByIban(account.getIban())).thenReturn(Optional.of(account));
+    when(accountRepo.findStoredByIban(account.getIban())).thenReturn(Optional.of(account));
 
     var actual = json
         .readValue(
@@ -213,7 +213,7 @@ class AccountControllerTest {
   void givenUserIsCustomer_whenGetAccountWithSomeoneElsesAccountsIban_thenForbidden()
       throws Exception {
     var account = AccountFixtures.createSomeonesXpfAccount(100000);
-    when(accountRepo.findByIban(account.getIban())).thenReturn(Optional.of(account));
+    when(accountRepo.findStoredByIban(account.getIban())).thenReturn(Optional.of(account));
 
     api
         .get(AccountController.ACCOUNT_PATH, account.getIban().toMachineReadableString())
@@ -224,7 +224,7 @@ class AccountControllerTest {
   @WithJwt("advisor.json")
   void givenAnExternalIban_whenGetAccount_thenAccountNotFound() throws Exception {
     var iban = AccountFixtures.createCustomersXpfAccount(100000).getIban();
-    when(accountRepo.findByIban(any(Iban.class))).thenReturn(Optional.empty());
+    when(accountRepo.findStoredByIban(any(Iban.class))).thenReturn(Optional.empty());
 
     api
         .get(AccountController.ACCOUNT_PATH, iban.toMachineReadableString())
@@ -241,7 +241,7 @@ class AccountControllerTest {
         .get(AccountController.ACCOUNT_PATH, "not-an-iban")
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.type").value(ProblemType.INVALID_REQUEST.uri().toString()));
-    verify(accountRepo, never()).findByIban(any());
+    verify(accountRepo, never()).findStoredByIban(any());
   }
 
   // ===================== createAccount =====================

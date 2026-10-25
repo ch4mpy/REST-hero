@@ -5,7 +5,7 @@
   machine accepts for any domain.
 
   Run in the verify phase of every jar module by the "jar-content-check" execution of
-  maven-antrun-plugin (backend/pom.xml), with the property "jar": the module's packaged jar, after
+  maven-antrun-plugin (api/pom.xml), with the property "jar": the module's packaged jar, after
   Spring Boot's repackage. Fails naming each forbidden entry.
 
   Never edited to make a build pass: remove the file from the module, then `./mvnw clean verify`

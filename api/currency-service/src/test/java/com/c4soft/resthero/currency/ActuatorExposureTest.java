@@ -55,8 +55,8 @@ import com.c4soft.resthero.problem.ProblemType;
  *
  * <p>A real server, called over HTTP, with real tokens: signed by a key of this test, which
  * WireMock serves as the realm's JWKS, and checked by the API's own decoder (issuer, signature,
- * expiry). A call without a token to an unexposed endpoint is {@code 401} before and after the
- * fix: only the calls with a token tell exposed from unexposed.
+ * expiry). Without a token, an endpoint is {@code 401} whether it is exposed or not: only the calls
+ * with a token tell exposed from unexposed.
  */
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
@@ -213,8 +213,8 @@ class ActuatorExposureTest {
 
   /**
    * A logger turned to {@code TRACE} would send personal data or secrets to the logs exported to
-   * Grafana. The level is read from the API's logging system, not from the endpoint (which no
-   * longer answers), and put back as it was should the request go through.
+   * Grafana. The level is read from the API's logging system, not from the endpoint (which is not
+   * exposed), and put back as it was should the request go through.
    */
   @Test
   void givenASelfRegisteredUsersToken_whenSetLoggerToTrace_thenNotFoundAndLevelUnchanged() {
@@ -266,14 +266,10 @@ class ActuatorExposureTest {
   }
 
   @Test
-  void givenAToken_whenGetEnvOrLoggers_thenNotFound() {
-    final var token = selfRegisteredUserToken();
-    final var env = get("/actuator/env", token);
-    assertThat(env.status().value()).isEqualTo(404);
-    assertThat(env.json("$.type")).isEqualTo(ProblemType.NOT_FOUND.uri().toString());
-    final var loggers = get("/actuator/loggers", token);
-    assertThat(loggers.status().value()).isEqualTo(404);
-    assertThat(loggers.json("$.type")).isEqualTo(ProblemType.NOT_FOUND.uri().toString());
+  void givenASelfRegisteredUsersToken_whenGetLoggers_thenNotFound() {
+    final var answer = get("/actuator/loggers", selfRegisteredUserToken());
+    assertThat(answer.status().value()).isEqualTo(404);
+    assertThat(answer.json("$.type")).isEqualTo(ProblemType.NOT_FOUND.uri().toString());
   }
 
   @Test

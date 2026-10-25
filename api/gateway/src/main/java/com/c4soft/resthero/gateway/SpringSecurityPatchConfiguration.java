@@ -81,8 +81,7 @@ public class SpringSecurityPatchConfiguration implements BeanPostProcessor {
     private final AuthenticationFailureHandler authenticationFailureHandler;
 
     /**
-     * Constructs an {@code OAuth2AuthorizationRequestRedirectFilter} using the
-     * provided
+     * Constructs an {@code OAuth2AuthorizationRequestRedirectFilter} using the provided
      * parameters.
      *
      * @param authorizationRequestResolver the resolver used for resolving

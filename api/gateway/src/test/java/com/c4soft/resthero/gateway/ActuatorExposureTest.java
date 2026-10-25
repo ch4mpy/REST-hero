@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.actuate.endpoint.EndpointId;
 import org.springframework.boot.actuate.endpoint.web.PathMappedEndpoints;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
@@ -16,9 +15,8 @@ import org.wiremock.spring.ConfigureWireMock;
 import org.wiremock.spring.EnableWireMock;
 
 /**
- * The gateway's actuator, on its management port (docs/decisions/0004): {@code health} answers
- * without a token, {@code info} is no longer exposed. A real
- * server: MockMvc only reaches the main port.
+ * The gateway's actuator, on its management port: {@code health} answers without a token, nothing
+ * else is exposed. A real server: MockMvc only reaches the main port.
  */
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
@@ -71,8 +69,6 @@ class ActuatorExposureTest {
    */
   @Test
   void whenListExposedEndpoints_thenHealthOnly() {
-    assertThat(endpoints.getEndpoint(EndpointId.of("health"))).isNotNull();
-    assertThat(endpoints.getEndpoint(EndpointId.of("info"))).isNull();
-    assertThat(get("/actuator/info").value()).isEqualTo(401);
+    assertThat(endpoints.getAllRootPaths()).containsExactly("health");
   }
 }

@@ -99,14 +99,14 @@ class CardControllerTest {
 
   private Card givenCustomersCard(Integer transactionCeiling, Integer rolling30Ceiling) {
     var card = CardFixtures.createCustomersCard(transactionCeiling, rolling30Ceiling);
-    when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
+    when(cardRepo.findStoredByNumber(card.getNumber())).thenReturn(Optional.of(card));
     givenAccountOwnedBy(CardFixtures.CUSTOMER_SUBJECT, CardFixtures.CUSTOMER_IBAN);
     return card;
   }
 
   private Card givenSomeonesCard() {
     var card = CardFixtures.createSomeonesCard(1000, 5000);
-    when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
+    when(cardRepo.findStoredByNumber(card.getNumber())).thenReturn(Optional.of(card));
     givenAccountOwnedBy(CardFixtures.SOMEONE_SUBJECT, CardFixtures.SOMEONE_IBAN);
     return card;
   }
@@ -286,7 +286,7 @@ class CardControllerTest {
   @WithJwt("advisor.json")
   void givenUserHasReadAnyAuthority_whenGetCard_thenOk() throws Exception {
     var card = CardFixtures.createCustomersCard(1000, 5000);
-    when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
+    when(cardRepo.findStoredByNumber(card.getNumber())).thenReturn(Optional.of(card));
 
     var actual = json
         .readValue(
@@ -320,7 +320,7 @@ class CardControllerTest {
   @Test
   @WithJwt("advisor.json")
   void givenUnknownCardNumber_whenGetCard_thenCardNotFound() throws Exception {
-    when(cardRepo.findByNumber("unknown-card-number")).thenReturn(Optional.empty());
+    when(cardRepo.findStoredByNumber("unknown-card-number")).thenReturn(Optional.empty());
 
     api
         .get(CardController.CARD_PATH, "unknown-card-number")
@@ -380,7 +380,7 @@ class CardControllerTest {
   @Test
   @WithJwt("advisor.json")
   void givenUnknownCardNumber_whenSetCardStatus_thenCardNotFound() throws Exception {
-    when(cardRepo.findByNumber("unknown-card-number")).thenReturn(Optional.empty());
+    when(cardRepo.findStoredByNumber("unknown-card-number")).thenReturn(Optional.empty());
 
     api
         .put(new CardStatusRequest(false), CardController.CARD_STATUS_PATH, "unknown-card-number")
@@ -490,7 +490,7 @@ class CardControllerTest {
     var card = CardFixtures.createCustomersCard(1000, 5000);
     var from = Instant.now().minus(1, ChronoUnit.DAYS);
     var to = Instant.now();
-    when(cardRepo.findByNumber(card.getNumber())).thenReturn(Optional.of(card));
+    when(cardRepo.findStoredByNumber(card.getNumber())).thenReturn(Optional.of(card));
     when(paymentRepo.findByCardNumberAndTimestampBetween(card.getNumber(), from, to))
         .thenReturn(List.of());
 

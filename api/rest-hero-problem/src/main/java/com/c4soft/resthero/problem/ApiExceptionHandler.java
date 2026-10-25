@@ -70,6 +70,9 @@ public class ApiExceptionHandler {
               schema = @Schema(implementation = ApiProblemDetail.class))),
       @ApiResponse(responseCode = "500", description = "Internal Server Error",
           content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+              schema = @Schema(implementation = ApiProblemDetail.class))),
+      @ApiResponse(responseCode = "502", description = "Bad Gateway",
+          content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
               schema = @Schema(implementation = ApiProblemDetail.class)))})
   public ResponseEntity<ApiProblemDetail> handleProblem(ApiProblemException ex) {
     if (ex.getType().status().is5xxServerError()) {

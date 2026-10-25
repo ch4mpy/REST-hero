@@ -296,11 +296,12 @@ public class CustomerController {
       throws ApiProblemException {
     if (!Objects.equals(customer.getId(), beneficiary.getCustomerId())) {
       log.warn("Customer {} and beneficiary {} do not match", customer, beneficiary);
+      // the converter's answer for an unknown ID, word for word (WebConfiguration)
+      final var beneficiaryId = String.valueOf(beneficiary.getId());
       throw new ApiProblemException(
           ProblemType.BENEFICIARY_NOT_FOUND,
-          "No beneficiary with ID %d for customer %s"
-              .formatted(beneficiary.getId(), customer.getId()),
-          Map.of("customerId", customer.getId(), "beneficiaryId", beneficiary.getId()));
+          "No beneficiary with ID %s".formatted(beneficiaryId),
+          Map.of("beneficiaryId", beneficiaryId));
     }
   }
 }

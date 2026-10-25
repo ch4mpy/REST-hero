@@ -27,7 +27,7 @@ import com.c4_soft.springaddons.security.oidc.starter.properties.SpringAddonsOid
 import com.c4soft.resthero.problem.ProblemType;
 
 /**
- * A refused login changes no session (spec 0011, "changing no session"): spring-addons' resolver
+ * A refused login changes no session: spring-addons' resolver
  * saves an allowed success address in the session before it refuses the failure address, so the
  * gateway checks both before it ({@code SpringSecurityPatchConfiguration}).
  *

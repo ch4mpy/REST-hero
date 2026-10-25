@@ -34,6 +34,15 @@ public class AccountRepository {
     return jpaRepository.findByIban(iban);
   }
 
+  /**
+   * The account as stored, read past the cache: a request is authorized on the database's state (a
+   * cached instance keeps what a rolled-back request changed in it), and an unknown IBAN leaves no
+   * entry in the cache.
+   */
+  public Optional<Account> findStoredByIban(Iban iban) {
+    return jpaRepository.findByIban(iban);
+  }
+
   @Cacheable(cacheNames = ACCOUNTS_BY_CUSTOMER_ID_CACHE, key = "#customerId")
   public List<Account> findByCustomerId(String customerId) {
     return jpaRepository.findByCustomerId(customerId);

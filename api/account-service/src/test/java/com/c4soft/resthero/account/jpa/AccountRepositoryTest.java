@@ -68,6 +68,19 @@ class AccountRepositoryTest {
     });
   }
 
+  /** The path variable's converter reads past the cache: each call reaches the database. */
+  @Test
+  @DirtiesContext
+  void whenFindStoredByIbanTwice_thenTheDatabaseIsReadTwiceAndNothingIsCached() {
+    final var iban = customerXpfAccount.getIban();
+    accountRepo.findStoredByIban(iban);
+    accountRepo.findStoredByIban(iban);
+
+    verify(jpaAccountRepo, times(2)).findByIban(iban);
+    accountRepo.findByIban(iban);
+    verify(jpaAccountRepo, times(3)).findByIban(iban);
+  }
+
   @Test
   @DirtiesContext
   // prevent cache operation conflict between tests

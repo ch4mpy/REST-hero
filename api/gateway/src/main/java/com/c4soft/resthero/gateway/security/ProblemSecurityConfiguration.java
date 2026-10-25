@@ -38,8 +38,7 @@ import com.c4soft.resthero.problem.ProblemType;
  * <li>the resource server filter chain, which handles every route outside spring-addons' client
  * {@code security-matchers}: the same {@code 401} problem (with a {@code Bearer} challenge) for
  * what its {@code permit-all} doesn't list, an unknown route included. It ignores the session: a
- * logged-in user gets a {@code 404} on an unknown route under the client's prefixes only (spec
- * v4).</li>
+ * logged-in user gets a {@code 404} on an unknown route under the client's prefixes only.</li>
  * </ul>
  *
  * <p>
@@ -90,7 +89,7 @@ public class ProblemSecurityConfiguration {
    * written as a {@code 500} by the shared exception resolver.
    */
   @Bean
-  ProblemResolutionExclusion clientAuthorizationRequired() {
+  ProblemResolutionExclusion clientAuthorizationFailures() {
     final var analyzer = new ThrowableAnalyzer();
     return ex -> analyzer.getFirstThrowableOfType(ClientAuthorizationException.class,
         analyzer.determineCauseChain(ex)) != null;

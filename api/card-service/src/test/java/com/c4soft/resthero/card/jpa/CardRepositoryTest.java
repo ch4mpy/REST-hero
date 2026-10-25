@@ -62,6 +62,19 @@ class CardRepositoryTest {
     });
   }
 
+  /** The path variable's converter reads past the cache: each call reaches the database. */
+  @Test
+  @DirtiesContext
+  void whenFindStoredByNumberTwice_thenTheDatabaseIsReadTwiceAndNothingIsCached() {
+    cardService.findStoredByNumber(cardNumber);
+    cardService.findStoredByNumber(cardNumber);
+    cardService.findStoredByNumber("unknown");
+
+    verify(jpaCardRepo, times(2)).findById(cardNumber);
+    cardService.findByNumber(cardNumber);
+    verify(jpaCardRepo, times(3)).findById(cardNumber);
+  }
+
   @Test
   @DirtiesContext
   // prevent cache operation conflict between tests

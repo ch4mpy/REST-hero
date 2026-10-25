@@ -46,7 +46,7 @@ public class WebConfiguration implements WebMvcConfigurer {
         return null;
       }
       return accountRepo
-          .findByIban(iban)
+          .findStoredByIban(iban)
           .orElseThrow(
               () -> new ApiProblemException(
                   ProblemType.ACCOUNT_NOT_FOUND,

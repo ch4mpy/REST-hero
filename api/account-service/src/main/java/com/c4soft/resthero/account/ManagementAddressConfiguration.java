@@ -30,8 +30,9 @@ import org.springframework.core.Ordered;
  *       scan loads it too (the scan's filter leaves out auto-configurations only, not management
  *       context configurations), and there {@code ManagementServerProperties} exists only with a
  *       separate management port, so the customizer does nothing where they are absent (and, where
- *       they are, sets on the main server the {@code server.address} it already has), rather than
- *       sitting outside the scan root, which a one-segment group id hasn't got.
+ *       they are, sets on the main server the {@code server.address} it already has). In a package
+ *       outside the scan root, it would only be loaded in the management context and could require
+ *       them.
  * </ul>
  */
 @ManagementContextConfiguration(value = ManagementContextType.CHILD, proxyBeanMethods = false)

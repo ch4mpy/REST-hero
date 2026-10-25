@@ -15,8 +15,8 @@ Lancer `./start-lab.sh 2.1` pour créer la branche `lab/2.1`.
 
 1. Lancer `mvn -pl account-service -am clean compile` depuis `api/`. Constater l'échec de compilation dans
    `AccountController.java` : `variable accountRepo not initialized in the default constructor` (et de même pour
-   `accountMapper` et `customersApi`). Ces trois champs sont déclarés `final`, ce qui impose qu'un constructeur les
-   initialise tous.
+   `accountMapper`, `customersApi`, `rabbitTemplate` et `eventsExchange`). Ces champs sont déclarés `final`, ce qui
+   impose qu'un constructeur les initialise tous.
 2. Retrouver dans `AccountController.java` (repère `LAB:2.1`) l'annotation manquante, et la reconstruire.
    Expliquer ce qu'elle apporte : `@RequiredArgsConstructor` (Lombok) génère un constructeur prenant en paramètre
    tous les champs `final`, ce qui revient exactement à l'exemple du support de cours écrivant ce constructeur à la

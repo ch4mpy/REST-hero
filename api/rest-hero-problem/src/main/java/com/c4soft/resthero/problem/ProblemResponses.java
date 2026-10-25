@@ -18,7 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>
  * The {@code detail} of the problems built here is a generic sentence for the logs and the curious:
- * never an exception message (SEC-6), and never displayed by the frontend, which translates the
+ * never an exception message, and never displayed by the frontend, which translates the
  * {@code type}.
  * </p>
  *
@@ -85,7 +85,7 @@ public class ProblemResponses {
     response.flushBuffer();
   }
 
-  /** The generic {@code detail} of a problem of that type: never an exception message (SEC-6). */
+  /** The generic {@code detail} of a problem of that type: never an exception message. */
   public static String genericDetail(ProblemType type) {
     return switch (type) {
       case UNAUTHENTICATED -> "Authentication is required";

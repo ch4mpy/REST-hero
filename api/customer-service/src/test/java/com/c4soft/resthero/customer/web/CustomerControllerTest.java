@@ -452,10 +452,12 @@ class CustomerControllerTest {
                 .get(CustomerController.BENEFICIARY_PATH, customer.getId(), 99L)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value(ProblemType.BENEFICIARY_NOT_FOUND.uri().toString()))
+                .andExpect(jsonPath("$.detail").value("No beneficiary with ID 99"))
+                .andExpect(jsonPath("$.parameters.length()").value(1))
                 .andExpect(jsonPath("$.parameters.beneficiaryId").value("99"));
     }
 
-    /** Reached through another customer's path, a beneficiary is not found: the path leaks nothing. */
+    /** Reached through another customer's path, a beneficiary gets the answer of an unknown ID, word for word. */
     @Test
     @WithJwt("advisor.json")
     void givenTheBeneficiaryOfAnotherCustomer_whenGetBeneficiary_thenBeneficiaryNotFound() throws Exception {
@@ -468,8 +470,9 @@ class CustomerControllerTest {
                 .get(CustomerController.BENEFICIARY_PATH, customer.getId(), othersBeneficiary.getId())
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value(ProblemType.BENEFICIARY_NOT_FOUND.uri().toString()))
-                .andExpect(jsonPath("$.parameters.customerId").value(customer.getId()))
-                .andExpect(jsonPath("$.parameters.beneficiaryId").value(othersBeneficiary.getId()));
+                .andExpect(jsonPath("$.detail").value("No beneficiary with ID 3"))
+                .andExpect(jsonPath("$.parameters.length()").value(1))
+                .andExpect(jsonPath("$.parameters.beneficiaryId").value("3"));
     }
 
     // ===================== updateBeneficiary =====================

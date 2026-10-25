@@ -26,6 +26,15 @@ public class CardRepository {
     return cardRepo.findById(number);
   }
 
+  /**
+   * The card as stored, read past the cache: a request is authorized on, and changes, the database's
+   * state (a cached instance keeps what a rolled-back request changed in it), and an unknown number
+   * leaves no entry in the cache.
+   */
+  public Optional<Card> findStoredByNumber(String number) {
+    return cardRepo.findById(number);
+  }
+
   @Caching(put = @CachePut(cacheNames = CARD_BY_NUMBER_CACHE, key = "#card.number"),
       evict = @CacheEvict(cacheNames = CardRepository.CARD_BY_IBAN_CACHE, key = "#card.iban"))
   public Card save(Card card) {

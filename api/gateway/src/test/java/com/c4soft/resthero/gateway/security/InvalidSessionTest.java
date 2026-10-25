@@ -30,8 +30,7 @@ import com.c4soft.resthero.problem.ProblemType;
  *
  * <ul>
  * <li>on {@code /me} only, spring-addons' {@code invalid-session.pass-through-patterns} opens a new
- * session and the request proceeds as without a cookie: the session probe answers anonymous
- *;</li>
+ * session and the request proceeds as without a cookie: the session probe answers anonymous;</li>
  * <li>every other route gets the invalid-session strategy's {@code 401};</li>
  * <li>{@code /logout} proceeds, its filter running before the session management.</li>
  * </ul>
