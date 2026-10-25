@@ -5,13 +5,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import java.util.List;
@@ -22,15 +21,16 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 import com.c4_soft.springaddons.security.oauth2.test.annotations.WithJwt;
 import com.c4_soft.springaddons.security.oauth2.test.webmvc.AutoConfigureAddonsWebmvcResourceServerSecurity;
+import com.c4_soft.springaddons.security.oauth2.test.webmvc.MockMvcSupport;
 import com.c4soft.resthero.account.AccountFixtures;
 import com.c4soft.resthero.account.MoneyTransferFixtures;
 import com.c4soft.resthero.account.SecurityConfig;
@@ -40,12 +40,15 @@ import com.c4soft.resthero.account.domain.MoneyTransfer;
 import com.c4soft.resthero.account.jpa.AccountRepository;
 import com.c4soft.resthero.account.jpa.MoneyTransferRepository;
 import com.c4soft.resthero.api.CurrenciesApi;
+import com.c4soft.resthero.commons.domain.Amount;
+import com.c4soft.resthero.commons.domain.Currency;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapper;
 import com.c4soft.resthero.commons.events.DomainEvent;
+import com.c4soft.resthero.problem.ProblemType;
 import tools.jackson.databind.ObjectMapper;
 
-@WebMvcTest(controllers = MoneyTransferController.class, properties = {})
+@WebMvcTest(controllers = MoneyTransferController.class, properties = "server.ssl.enabled=false")
 @Import({IbanStringMapper.class, MoneyTransferMapperImpl.class,
     WebConfiguration.class, SecurityConfig.class})
 @AutoConfigureAddonsWebmvcResourceServerSecurity
@@ -67,91 +70,34 @@ class MoneyTransferControllerTest {
   TopicExchange eventsExchange;
 
   @Autowired
-  MockMvc mockMvc;
+  MockMvcSupport api;
 
   @Autowired
   ObjectMapper json;
 
-  @Test
-  @WithAnonymousUser
-  void givenAnonymousUser_whenListTransfers_thenUnauthorized() throws Exception {
-    mockMvc
-        .perform(get("https://localhost" + MoneyTransferController.BASE_PATH))
-        .andExpect(status().isUnauthorized());
+  /** An account this service does not manage: nobody owns it here. */
+  private static final String ANOTHER_BANKS_IBAN = "FR762222333344445555";
+
+  private final Account source = AccountFixtures.createCustomersXpfAccount(100000);
+
+  private final Account destination = AccountFixtures.createSomeonesXpfAccount(50000);
+
+  private MoneyTransferRequest transferRequest(String sourceIban, String destinationIban,
+      Integer amount, String currency, String label) {
+    return new MoneyTransferRequest(sourceIban, destinationIban, amount, currency, label);
   }
 
-  @Test
-  @WithJwt("advisor.json")
-  void givenUserIsAdvisor_whenListTransfers_thenOk() throws Exception {
-    Account source = AccountFixtures.createCustomersXpfAccount(100000);
-    Account destination = AccountFixtures.createSomeonesXpfAccount(200000);
-
-    MoneyTransfer transfer = MoneyTransferFixtures.createMoneyTransfer(source, destination, 1000);
-
-    when(transferRepo.findAll(any(Specification.class), any(Pageable.class)))
-        .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(transfer)));
-
-    var mvcResult = mockMvc
-        .perform(
-            get("https://localhost" + MoneyTransferController.BASE_PATH)
-                .param("sourceIban", source.getIban().toMachineReadableString())
-                .param("destinationIban", destination.getIban().toMachineReadableString()))
-        .andExpect(status().isOk())
-        .andReturn();
-
-    var content = mvcResult.getResponse().getContentAsString();
-    // basic sanity checks on returned payload
-    assertThat(content).contains(destination.getIban().toMachineReadableString());
-  }
-
-  @Test
-  @WithJwt("advisor.json")
-  void givenInvalidTransferFilter_whenListTransfers_thenUnprocessableContent() throws Exception {
-    mockMvc
-        .perform(
-            get("https://localhost" + MoneyTransferController.BASE_PATH)
-                .param("labelContaining", "ab"))
-        .andExpect(status().isUnprocessableContent())
-        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
-        .andExpect(jsonPath("$.invalidFields.labelContaining").exists());
-  }
-
-  @Test
-  @WithAnonymousUser
-  void givenAnonymousUser_whenTransferMoney_thenUnauthorized() throws Exception {
-    Account s1 = AccountFixtures.createCustomersXpfAccount(100000);
-    Account d1 = AccountFixtures.createSomeonesXpfAccount(50000);
-
-    var dto = new MoneyTransferRequest(
-        s1.getIban().toMachineReadableString(),
-        d1.getIban().toMachineReadableString(),
-        1000,
-        s1.getBalance().getCurrency().name(),
-        "label");
-
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(dto)))
-        .andExpect(status().isUnauthorized());
-  }
-
-  @Test
-  @WithJwt("card-service.json")
-  void givenServiceHasTransferAuthority_whenTransferMoney_thenCreated() throws Exception {
-    Account source = AccountFixtures.createCustomersXpfAccount(100000);
-    Account destination = AccountFixtures.createSomeonesXpfAccount(50000);
-
-    var dto = new MoneyTransferRequest(
+  private MoneyTransferRequest validTransferRequest() {
+    return transferRequest(
         source.getIban().toMachineReadableString(),
         destination.getIban().toMachineReadableString(),
         1000,
         "XPF",
         "some label");
+  }
 
-    when(accountRepo.findByIban(source.getIban())).thenReturn(Optional.of(source));
-    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
+  /** The repositories persist a transfer with the ID 42, the currency service changes nothing. */
+  private void givenTransfersArePersisted() {
     when(transferRepo.save(any(MoneyTransfer.class))).thenAnswer(invocation -> {
       final var transfer = spy(invocation.getArgument(0, MoneyTransfer.class));
       when(transfer.getId()).thenReturn(42L);
@@ -159,191 +105,202 @@ class MoneyTransferControllerTest {
     });
     when(currenciesApi.change(anyInt(), anyString(), anyString()))
         .thenAnswer(i -> ResponseEntity.ok(i.getArgument(0, Integer.class)));
+  }
 
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(dto)))
-        .andExpect(status().isCreated());
+  private void assertValidationProblemOn(MoneyTransferRequest dto, String field) throws Exception {
+    api
+        .post(dto, MoneyTransferController.BASE_PATH)
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value(ProblemType.VALIDATION.uri().toString()))
+        .andExpect(jsonPath("$.invalidFields." + field).isString());
+    verify(transferRepo, never()).save(any(MoneyTransfer.class));
+  }
+
+  // ===================== listMoneyTransfers =====================
+
+  @Test
+  @WithAnonymousUser
+  void givenAnonymousUser_whenListTransfers_thenUnauthorized() throws Exception {
+    api.get(MoneyTransferController.BASE_PATH).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @WithJwt("advisor.json")
+  void givenUserIsAdvisor_whenListTransfers_thenOk() throws Exception {
+    MoneyTransfer transfer = MoneyTransferFixtures.createMoneyTransfer(source, destination, 1000);
+    when(transferRepo.findAll(any(Specification.class), any(Pageable.class)))
+        .thenReturn(new PageImpl<>(List.of(transfer)));
+
+    var content = api
+        .get(
+            MoneyTransferController.BASE_PATH + "?sourceIban={source}&destinationIban={destination}",
+            source.getIban().toMachineReadableString(),
+            destination.getIban().toMachineReadableString())
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    assertThat(content).contains(destination.getIban().toMachineReadableString());
+  }
+
+  @Test
+  @WithJwt("customer.json")
+  void givenUserIsCustomer_whenListTransfersOfSomeoneElsesAccount_thenForbidden()
+      throws Exception {
+    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
+
+    api
+        .get(
+            MoneyTransferController.BASE_PATH + "?sourceIban={source}",
+            destination.getIban().toMachineReadableString())
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @WithJwt("advisor.json")
+  void givenATooShortLabelFilter_whenListTransfers_thenValidationProblem() throws Exception {
+    api
+        .get(MoneyTransferController.BASE_PATH + "?labelContaining={label}", "ab")
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value(ProblemType.VALIDATION.uri().toString()))
+        .andExpect(jsonPath("$.invalidFields.labelContaining").isString());
+  }
+
+  // ===================== transferMoneyBetweenAccounts =====================
+
+  @Test
+  @WithAnonymousUser
+  void givenAnonymousUser_whenTransferMoney_thenUnauthorized() throws Exception {
+    api.post(validTransferRequest(), MoneyTransferController.BASE_PATH)
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @WithJwt("customer.json")
+  void givenUserOwnsNeitherAccount_whenTransferMoney_thenForbidden() throws Exception {
+    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
+
+    api
+        .post(
+            transferRequest(
+                destination.getIban().toMachineReadableString(),
+                ANOTHER_BANKS_IBAN,
+                1000,
+                "XPF",
+                "some label"),
+            MoneyTransferController.BASE_PATH)
+        .andExpect(status().isForbidden());
+    verify(transferRepo, never()).save(any(MoneyTransfer.class));
+  }
+
+  @Test
+  @WithJwt("card-service.json")
+  void givenServiceHasTransferAuthority_whenTransferMoney_thenCreated() throws Exception {
+    when(accountRepo.findByIban(source.getIban())).thenReturn(Optional.of(source));
+    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
+    givenTransfersArePersisted();
+
+    api
+        .post(validTransferRequest(), MoneyTransferController.BASE_PATH)
+        .andExpect(status().isCreated())
+        .andExpect(header().string(HttpHeaders.LOCATION, MoneyTransferController.BASE_PATH + "/42"));
 
     verify(rabbitTemplate, times(2))
         .convertAndSend(any(), eq("account.updated"), any(DomainEvent.class));
   }
 
+  /** This service ignores other banks: an account it does not manage is neither debited nor credited. */
   @Test
   @WithJwt("card-service.json")
   void givenUnknownSource_whenTransferMoney_thenCreated() throws Exception {
-    Account source = AccountFixtures.createCustomersXpfAccount(100000);
-    Account destination = AccountFixtures.createSomeonesXpfAccount(50000);
-
-    var dto = new MoneyTransferRequest(
-        source.getIban().toMachineReadableString(),
-        destination.getIban().toMachineReadableString(),
-        1000,
-        "XPF",
-        "label");
-
     when(accountRepo.findByIban(source.getIban())).thenReturn(Optional.empty());
     when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
-    when(transferRepo.save(any(MoneyTransfer.class))).thenAnswer(invocation -> {
-      final var transfer = spy(invocation.getArgument(0, MoneyTransfer.class));
-      when(transfer.getId()).thenReturn(42L);
-      return transfer;
-    });
-    when(currenciesApi.change(anyInt(), anyString(), anyString()))
-        .thenAnswer(i -> ResponseEntity.ok(i.getArgument(0, Integer.class)));
+    givenTransfersArePersisted();
 
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(dto)))
+    api.post(validTransferRequest(), MoneyTransferController.BASE_PATH)
         .andExpect(status().isCreated());
+
+    verify(rabbitTemplate, times(1))
+        .convertAndSend(any(), eq("account.updated"), any(DomainEvent.class));
   }
 
   @Test
   @WithJwt("card-service.json")
   void givenUnknownDestination_whenTransferMoney_thenCreated() throws Exception {
-    Account source = AccountFixtures.createCustomersXpfAccount(100000);
-    Iban destinationIban = AccountFixtures.createSomeonesXpfAccount(50000).getIban();
-
-    var dto = new MoneyTransferRequest(
-        source.getIban().toMachineReadableString(),
-        destinationIban.toMachineReadableString(),
-        1000,
-        "XPF",
-        "label");
-
     when(accountRepo.findByIban(source.getIban())).thenReturn(Optional.of(source));
-    when(accountRepo.findByIban(destinationIban)).thenReturn(Optional.empty());
-    when(transferRepo.save(any(MoneyTransfer.class))).thenAnswer(invocation -> {
-      final var transfer = spy(invocation.getArgument(0, MoneyTransfer.class));
-      when(transfer.getId()).thenReturn(42L);
-      return transfer;
-    });
-    when(currenciesApi.change(anyInt(), anyString(), anyString()))
-        .thenAnswer(i -> ResponseEntity.ok(i.getArgument(0, Integer.class)));
+    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.empty());
+    givenTransfersArePersisted();
 
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(dto)))
+    api.post(validTransferRequest(), MoneyTransferController.BASE_PATH)
         .andExpect(status().isCreated());
+
+    verify(rabbitTemplate, times(1))
+        .convertAndSend(any(), eq("account.updated"), any(DomainEvent.class));
   }
 
-  @SuppressWarnings("null")
   @Test
   @WithJwt("card-service.json")
-  void givenInvalidTransferRequest_whenTransferMoney_thenUnprocessableContent() throws Exception {
-    Account source = AccountFixtures.createCustomersXpfAccount(100000);
-    Account destination = AccountFixtures.createCustomersXpfAccount(50000);
-
-    when(accountRepo.findByIban(source.getIban())).thenReturn(Optional.of(source));
-    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
-
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json
-                        .writeValueAsString(
-                            new MoneyTransferRequest(
-                                "not-an-iban",
-                                destination.getIban().toMachineReadableString(),
-                                1000,
-                                "XPF",
-                                "label"))))
-        .andExpect(status().isUnprocessableContent())
-        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
-        .andExpect(jsonPath("$.invalidFields.sourceIban").exists());
-
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json
-                        .writeValueAsString(
-                            new MoneyTransferRequest(
-                                source.getIban().toMachineReadableString(),
-                                "not-an-iban",
-                                1000,
-                                "XPF",
-                                "label"))))
-        .andExpect(status().isUnprocessableContent())
-        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
-        .andExpect(jsonPath("$.invalidFields.destinationIban").exists());
-
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json
-                        .writeValueAsString(
-                            new MoneyTransferRequest(
-                                source.getIban().toMachineReadableString(),
-                                destination.getIban().toMachineReadableString(),
-                                -1,
-                                "XPF",
-                                "label"))))
-        .andExpect(status().isUnprocessableContent())
-        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
-        .andExpect(jsonPath("$.invalidFields.amount").exists());
-
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json
-                        .writeValueAsString(
-                            new MoneyTransferRequest(
-                                source.getIban().toMachineReadableString(),
-                                destination.getIban().toMachineReadableString(),
-                                1000,
-                                "XPFX",
-                                "label"))))
-        .andExpect(status().isUnprocessableContent())
-        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
-        .andExpect(jsonPath("$.invalidFields.currency").exists());
-
-    mockMvc
-        .perform(
-            post("https://localhost" + MoneyTransferController.BASE_PATH)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json
-                        .writeValueAsString(
-                            new MoneyTransferRequest(
-                                source.getIban().toMachineReadableString(),
-                                destination.getIban().toMachineReadableString(),
-                                1000,
-                                "XPF",
-                                "la"))))
-        .andExpect(status().isUnprocessableContent())
-        .andExpect(jsonPath("$.type").value("urn:rest-hero:problem:validation"))
-        .andExpect(jsonPath("$.invalidFields.label").exists());
+  void givenAMalformedSourceIban_whenTransferMoney_thenValidationProblem() throws Exception {
+    var valid = validTransferRequest();
+    assertValidationProblemOn(
+        transferRequest("not-an-iban", valid.destinationIban(), valid.amount(), valid.currency(),
+            valid.label()),
+        "sourceIban");
   }
+
+  @Test
+  @WithJwt("card-service.json")
+  void givenAMalformedDestinationIban_whenTransferMoney_thenValidationProblem() throws Exception {
+    var valid = validTransferRequest();
+    assertValidationProblemOn(
+        transferRequest(valid.sourceIban(), "not-an-iban", valid.amount(), valid.currency(),
+            valid.label()),
+        "destinationIban");
+  }
+
+  @Test
+  @WithJwt("card-service.json")
+  void givenANegativeAmount_whenTransferMoney_thenValidationProblem() throws Exception {
+    var valid = validTransferRequest();
+    assertValidationProblemOn(
+        transferRequest(valid.sourceIban(), valid.destinationIban(), -1, valid.currency(),
+            valid.label()),
+        "amount");
+  }
+
+  @Test
+  @WithJwt("card-service.json")
+  void givenAnUnsupportedCurrency_whenTransferMoney_thenValidationProblem() throws Exception {
+    var valid = validTransferRequest();
+    assertValidationProblemOn(
+        transferRequest(valid.sourceIban(), valid.destinationIban(), valid.amount(), "XPFX",
+            valid.label()),
+        "currency");
+  }
+
+  @Test
+  @WithJwt("card-service.json")
+  void givenATooShortLabel_whenTransferMoney_thenValidationProblem() throws Exception {
+    var valid = validTransferRequest();
+    assertValidationProblemOn(
+        transferRequest(valid.sourceIban(), valid.destinationIban(), valid.amount(),
+            valid.currency(), "la"),
+        "label");
+  }
+
+  // ===================== getMoneyTransfer =====================
 
   @Test
   @WithJwt("advisor.json")
   void givenUserIsAdvisor_whenGetTransfer_thenOk() throws Exception {
-    Account source3 = AccountFixtures.createCustomersXpfAccount(100000);
-    Account destination3 = AccountFixtures.createSomeonesXpfAccount(50000);
-
-    MoneyTransfer transfer2 =
-        MoneyTransferFixtures.createMoneyTransfer(source3, destination3, 1000);
-
-    when(transferRepo.findById(1L)).thenReturn(Optional.of(transfer2));
+    MoneyTransfer transfer = MoneyTransferFixtures.createMoneyTransfer(source, destination, 1000);
+    when(transferRepo.findById(1L)).thenReturn(Optional.of(transfer));
 
     var actual = json
         .readValue(
-            mockMvc
-                .perform(get("https://localhost" + MoneyTransferController.TRANSFER_PATH, "1"))
+            api
+                .get(MoneyTransferController.TRANSFER_PATH, "1")
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -356,23 +313,44 @@ class MoneyTransferControllerTest {
   @Test
   @WithJwt("customer.json")
   void givenUserIsCustomer_whenGetSomeoneElsesTransfer_thenForbidden() throws Exception {
-    var moneyTransferId = 2L;
+    when(transferRepo.findById(2L))
+        .thenReturn(
+            Optional
+                .of(
+                    MoneyTransfer
+                        .of(
+                            destination.getIban(),
+                            Iban.of(ANOTHER_BANKS_IBAN),
+                            new Amount(1000, Currency.XPF),
+                            "rent")));
+    when(accountRepo.findByIban(destination.getIban())).thenReturn(Optional.of(destination));
 
-    when(transferRepo.findById(moneyTransferId)).thenReturn(Optional.of(mock(MoneyTransfer.class)));
-
-    mockMvc
-        .perform(get("https://localhost" + MoneyTransferController.TRANSFER_PATH, moneyTransferId))
-        .andExpect(status().isForbidden());
+    api.get(MoneyTransferController.TRANSFER_PATH, 2L).andExpect(status().isForbidden());
   }
 
   @Test
   @WithJwt("advisor.json")
-  void givenUnknownTransferId_whenGetTransfer_thenNotFound() throws Exception {
+  void givenUnknownTransferId_whenGetTransfer_thenMoneyTransferNotFound() throws Exception {
     when(transferRepo.findById(999L)).thenReturn(Optional.empty());
 
-    mockMvc
-        .perform(get("https://localhost" + MoneyTransferController.TRANSFER_PATH, 999L))
-        .andExpect(status().isNotFound());
+    api
+        .get(MoneyTransferController.TRANSFER_PATH, 999L)
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.type").value(ProblemType.MONEY_TRANSFER_NOT_FOUND.uri().toString()))
+        .andExpect(jsonPath("$.parameters.transferId").value("999"));
+  }
+
+  /** An ID that is no number names no transfer: the same answer as an unknown one. */
+  @Test
+  @WithJwt("advisor.json")
+  void givenATransferIdThatIsNoNumber_whenGetTransfer_thenMoneyTransferNotFound()
+      throws Exception {
+    api
+        .get(MoneyTransferController.TRANSFER_PATH, "abc")
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.type").value(ProblemType.MONEY_TRANSFER_NOT_FOUND.uri().toString()))
+        .andExpect(jsonPath("$.parameters.transferId").value("abc"));
+    verify(transferRepo, never()).findById(any());
   }
 
 }

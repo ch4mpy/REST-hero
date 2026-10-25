@@ -45,7 +45,7 @@ class AccountServiceApplicationTests {
             mockMvc
                 .perform(
                     get(
-                        "https://localhost" + AccountController.ACCOUNT_PATH,
+                        AccountController.ACCOUNT_PATH,
                         account.getIban().toMachineReadableString()))
                 .andExpect(status().isOk())
                 .andReturn()

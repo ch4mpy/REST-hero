@@ -1117,6 +1117,63 @@ Les dépendances injectées par Spring peuvent être :
 - remplacées par des `@MockitoBean` (ou des implémentations spécifiques aux tests)
 - importées explicitement avec `@Import({})` si elles ne font pas partie de la _tranche_ prévue par Spring
 
+#### Ce qu'un test prouve
+
+Un test ne prouve un comportement que s'il **atteint le code visé** et **vérifie le résultat observable**. Deux pièges
+reviennent souvent :
+
+- **une assertion trop large.** `status().is4xxClientError()` est satisfait par un `400`, un `401`, un `403` ou un
+  `404` : un tel test passe aussi quand la requête est refusée avant le contrôleur, pour une raison qui n'a rien à voir
+  avec le cas testé. On vérifie le statut exact et le contrat d'erreur (voir [4.4](#rest-controller-exceptions)) : le
+  `type` du problème, ses `parameters`, ou ses `invalidFields` pour une erreur de validation.
+- **plusieurs cas dans un test.** Un test qui envoie successivement un IBAN mal formé, un montant négatif et une devise
+  inconnue s'arrête au premier échec et ne dit pas lequel des cas est couvert. Une seule violation par test, nommée
+  dans le nom du test (`givenAMalformedIban_whenCreateAccount_thenValidationProblem`).
+
+Pour les `@RestController`, on écrit pour chaque endpoint un test par cas :
+
+- **accès** : anonyme (`401`), utilisateur sans le droit requis (`403`), utilisateur autorisé (succès) ;
+- **succès** : `201` avec l'en-tête `Location` exact pour une création, `204` et le collaborateur appelé pour une
+  modification ou une suppression ;
+- **validation** : un champ invalide par test, `422` de type `validation`, le champ dans `invalidFields` ;
+- **rejets du framework** : paramètre obligatoire absent, corps qui n'est pas du JSON, variable de chemin impossible à
+  convertir, `400` de type `invalid-request` ;
+- **problèmes métier** : un test par `ProblemType` que l'endpoint peut renvoyer, avec ses `parameters`.
+
+```java
+@WebMvcTest(controllers = AccountController.class, properties = "server.ssl.enabled=false")
+@Import({IbanStringMapper.class, AccountMapperImpl.class, WebConfiguration.class, SecurityConfig.class})
+@AutoConfigureAddonsWebmvcResourceServerSecurity
+class AccountControllerTest {
+
+  @MockitoBean
+  AccountRepository accountRepo;
+
+  @Autowired
+  MockMvcSupport api;
+
+  @Test
+  @WithJwt("advisor.json")
+  void givenAMalformedIban_whenCreateAccount_thenValidationProblem() throws Exception {
+    api
+        .post(new AccountCreationRequest("not-an-iban", "customer-subject", "XPF"), AccountController.BASE_PATH)
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value(ProblemType.VALIDATION.uri().toString()))
+        .andExpect(jsonPath("$.invalidFields.iban").isString());
+  }
+}
+```
+
+- `MockMvcSupport` (spring-addons) enveloppe `MockMvc` : `get(path, variables...)`, `post(corps, path, variables...)`,
+  `put(...)`, `delete(...)`, le corps sérialisé en JSON avec le bon `Content-Type`.
+- `@WithJwt("advisor.json")` construit l'authentification à partir des claims du fichier `advisor.json` des ressources
+  de test, avec le même convertisseur que l'application : les autorités sont celles qu'aurait un vrai jeton.
+- `server.ssl.enabled=false` : avec TLS actif, la configuration du serveur de ressources redirige toute requête `http`
+  vers `https`, et chaque test recevrait un `302`.
+
+Un test qui n'a jamais échoué n'a encore rien prouvé. Pour s'en assurer, on retire le code qu'il protège et on vérifie
+qu'il échoue pour la raison attendue : c'est ce que fait le T.P. 4.4 en retirant l'advice qui traduit les exceptions.
+
 ##### T.P.
 
 Initialisation :

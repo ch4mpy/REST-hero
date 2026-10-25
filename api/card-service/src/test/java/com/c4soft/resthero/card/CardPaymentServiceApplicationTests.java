@@ -84,7 +84,7 @@ class CardPaymentServiceApplicationTests {
 
     mockMvc
         .perform(
-            post("https://localhost" + CardController.PAYMENT_LIST_PATH, card.getNumber())
+            post(CardController.PAYMENT_LIST_PATH, card.getNumber())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {

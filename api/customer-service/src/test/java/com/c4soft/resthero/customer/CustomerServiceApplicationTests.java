@@ -45,7 +45,7 @@ class CustomerServiceApplicationTests {
     when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
 
     var mvcResult = mockMvc
-        .perform(get("https://localhost" + CustomerController.CUSTOMER_PATH, customer.getId()))
+        .perform(get(CustomerController.CUSTOMER_PATH, customer.getId()))
         .andExpect(status().isOk())
         .andReturn();
 
