@@ -203,8 +203,7 @@
                 <groupId>org.openapitools</groupId>
                 <artifactId>openapi-generator-maven-plugin</artifactId>
                 <executions>
-                    <!-- LAB:1.5:TODO:START Ajouter l'exécution qui génère le client account-service
-                    à partir de sa spec OpenAPI -->
+                    <!-- LAB:1.5:TODO:START générer le client account-service à partir de sa spec OpenAPI -->
                     <execution>
                         <goals>
                             <goal>generate</goal>

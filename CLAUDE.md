@@ -47,8 +47,8 @@ services lisent leur certificat, et `SPRING_DATASOURCE_PASSWORD`.
   ce que le stagiaire constate une fois le code retiré (un test qui échoue, un contexte qui ne démarre pas).
 - Aperçu du retrait pour un TP : `./labs/scripts/strip_markers.py <id> <dossier>`, sur une copie du dépôt.
 - Après un changement qui touche un fichier marqué, lancer la boucle de contrôle de `labs/README.md` sur les TP
-  concernés : chaque branche doit échouer comme son énoncé le dit (à la compilation pour 1.1.1, 1.3, 2.1, 3.5,
-  3.6, 3.7, 6.1 et 6.2, aux tests ou au démarrage pour les autres).
+  concernés : chaque branche doit échouer comme son énoncé le dit (à la compilation pour 1.1.1, 1.3, 1.5, 2.1,
+  3.5, 3.6, 3.7, 6.1 et 6.2). Un repère tient sur une ligne : sur deux lignes, il n'est pas reconnu.
 - Un nouveau TP : `./labs/scripts/scaffold.py` crée l'énoncé manquant, le cours ajoute le bloc « T.P. »
   (`./start-lab.sh <id>`, `./exit-lab.sh --keep|--reset`). `lab.sh` n'existe plus : ne pas le citer.
 
