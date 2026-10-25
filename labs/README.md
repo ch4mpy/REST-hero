@@ -106,6 +106,36 @@ Règles :
 ./labs/scripts/strip_markers.py 1.4.3 .
 ```
 
+### Vérifier les branches de TP
+
+Le retrait n'étant qu'une opération texte, un changement de `main` qui touche un fichier marqué peut casser une branche
+de TP. Cette boucle génère chaque branche dans un dossier temporaire et dit si elle compile (à lancer depuis la racine
+du dépôt, après une vérification complète qui a écrit les specs dans `frontend/openapi`) :
+
+```bash
+for id in 1.4 1.6 2.3 2.6 3.10 4.4 4.6; do   # les TP concernés ; la liste des dossiers de labs/ pour tous
+  tmp=$(mktemp -d); git archive HEAD | tar -x -C "$tmp"
+  mkdir -p "$tmp/frontend/openapi" && cp frontend/openapi/*.openapi.json "$tmp/frontend/openapi/"
+  cp .env "$tmp/"
+  ./labs/scripts/strip_markers.py "$id" "$tmp" >/dev/null
+  if (cd "$tmp/api" && ./mvnw -q -DskipTests -Ph2 test-compile >"$tmp/build.log" 2>&1); then
+    echo "COMPILES $id"
+  else
+    echo "BREAKS   $id  ($(grep -m1 -E 'ERROR.*\.java' "$tmp/build.log"))"
+  fi
+  rm -rf "$tmp"
+done
+```
+
+Une branche qui compile doit ensuite échouer comme son énoncé l'annonce (lancer la commande de test de son `lab.md`
+dans le dossier temporaire). `6.1` et `6.2` ne compilent pas, par conception : le stagiaire y écrit le code retiré.
+
+Aucun énoncé ne doit plus citer l'ancien point d'entrée `lab.sh` ; cette commande ne doit rien afficher :
+
+```bash
+grep -nE '(^|[^-])lab\.sh' labs/*/lab.md labs/scripts/* README.md | grep -vE 'start-lab|exit-lab|build-lab'
+```
+
 ## Limite connue
 
 Le contenu retiré reste consultable dans l'historique Git de `main` (et dans les autres branches). Ce mécanisme dissuade
