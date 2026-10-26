@@ -49,6 +49,7 @@ Ce support de TPs répond à des exigences de production avancées. Les services
   - [3.7. Spécifications JPA](#jpa-specifications)
   - [3.8. Transactions](#jpa-transactions)
   - [3.9. Hibernate Envers](#jpa-envers)
+  - [3.10. Migrations de schéma avec Liquibase](#jpa-liquibase)
 - [4. Services REST WebMvc avec Spring Boot](#rest-controller)
   - [4.1. `@RequestMapping`](#rest-controller-request-mapping)
   - [4.2. Convertisseurs automatiques de Spring](#rest-controller-converters)
@@ -77,6 +78,8 @@ La solution est composée d'une interface graphique React interrogeant une API R
 
 - une `gateway`. Les requêtes (du frontend) préfixées avec `/gateway/bff` sont autorisées avec des cookies de session (`http-only=true`) et protégées contre le CSRF (cookie `XSRF-TOKEN` avec `http-only=false` et header `X-XSRF-TOKEN` requis pour pour les requêtes `POST`, `PUT` `PATCH` et `DELETE`). Les requêtes de clients OAuth2 (appels inter-services, Bruno, Postman, ...) préfixées avec `/gateway/m2m` sont autorisées avec un `Bearer` token dans le header `Authorization`.
 - `rest-hero-starter-common` est un starter Spring Boot contenant des classes et de l'auto-configuration partagée.
+- `rest-hero-problem` est un starter Spring Boot qui porte le contrat d'erreur de toutes les applications : les réponses
+  d'erreur en _problem details_ (RFC 9457) dont le `type` est une valeur de l'énumération `ProblemType`.
 - `currency-service` fournit un référentiel des devises supportées et du change sur le fixing veille de la BCE (via [https://frankfurter.dev](https://frankfurter.dev/))
 - `customer-service` responsable des clients et de leurs bénéficiaires. Ce service ne stocke que les bénéficiaires dans sa base de données. Les clients sont des utilisateurs de Keycloak (lecture / écriture via l'API Keycloak).
 - `account-service` responsable des comptes bancaires et des transferts entre comptes.
@@ -89,6 +92,7 @@ Pré-requis :
 - [Git](https://git-scm.com/install/). Sur Windows, Git Bash avec Mingw. Toujours sous Windows, installer [7-zip](https://www.7-zip.fr/download.html) et créer une copie de`7z.exe` nommée `zip.exe`.
 - [nvm](https://www.nvmnode.com/fr/guide/download.html)
 - [SDKMan](https://sdkman.io/install/)
+- [Python 3](https://www.python.org/downloads/) (`python3` dans le `PATH`), pour les scripts de génération des TPs (`labs/scripts`)
 - Docker ou [Docker Desktop](https://docs.docker.com/desktop/)
 - une entrée `127.0.0.1 host.docker.internal` dans `/etc/hosts` (`C:\windows\system32\drivers\etc\hosts` sous Windows)
 - un IDE : [Eclipse STS](https://spring.io/tools#eclipse) et [Visual Studio Code](https://code.visualstudio.com/download) (avec des plugins pour React) ou IntelliJ Ultimate
@@ -107,10 +111,12 @@ bash ./deploy-dev.sh
 sdk env install
 nvm install --lts
 nvm use
-cd api && mvn install -Popenapi,h2 && cd ..
+./build-openapi.sh
 git submodule init && git submodule update
 cd frontend && npm i && npm run api && cd ..
 ```
+
+`build-openapi.sh` charge le fichier `.env` (écrit par `build-0-env.sh`) avant de lancer Maven : les services lisent leur certificat dans le dossier désigné par `REST_HERO_CERTS_DIR`, pas dans leur jar (voir [1.6](#maven-build-resources-handling)).
 
 Dans [Keycloak](https://host.docker.internal/auth/admin/master/console/#/labs/realm-settings/email), éditer le mot de passe SMTP avec la valeur de `secrets/mail/password.txt`.
 
@@ -127,7 +133,9 @@ Pour démarrer le front depuis le répertoire `frontend`:
 npm run dev
 ```
 
-Pour démarrer les services de l'API depuis un IDE, surcharger la propriété `spring.datasource.password` avec la valeur du fichier `/secrets/rest-api/postgres_password.txt` dans une run config.
+Pour démarrer les services de l'API depuis un IDE, charger le fichier `.env` dans la run config : il fournit `REST_HERO_CERTS_DIR` (le dossier du certificat) et `SPRING_DATASOURCE_PASSWORD` (le mot de passe des bases).
+
+Les services et la gateway n'écoutent que sur la boucle locale (`server.address: 127.0.0.1`) : aucune autre machine du réseau ne les atteint. Keycloak et le reverse proxy, dans leurs conteneurs, les joignent par `host.docker.internal`, qui pointe sur la boucle locale (Docker Desktop, et l'entrée de `/etc/hosts` ci-dessus). Sous Linux avec Docker Engine, `host.docker.internal` est dans les conteneurs l'adresse du pont Docker, pas la boucle locale : démarrer alors la gateway (et les services que les conteneurs appellent) avec le profil `demo`, qui écoute sur toutes les interfaces (`server.address: 0.0.0.0`).
 
 ## 1. <a name="maven-build"/>Build avec Maven
 
@@ -205,25 +213,25 @@ Retour à la branche principale après T.P.
 #### 1.1.2. <a name="maven-build-phases"/>Phases
 
 - **_validate_** : intégrité des POMs
-- _initialize_ :
-- _generate-sources_ :
-- _process-sources_ :
-- _generate-resources_ :
-- _process-resources_ :
-- **_compile_** :
-- _process-classes_ :
-- _generate-test-sources_ :
-- _process-test-sources_ :
-- _generate-test-resources_ :
-- _process-test-resources_ :
-- _test-compile_ :
-- _process-test-classes_ :
+- _initialize_ : initialisation de l'état du build (propriétés, répertoires de travail)
+- _generate-sources_ : génération de code source (par exemple les interfaces `@HttpExchange` de `openapi-generator-maven-plugin`)
+- _process-sources_ : traitement des sources avant compilation
+- _generate-resources_ : génération de ressources
+- _process-resources_ : copie (et filtrage éventuel) des ressources dans `target/classes`
+- **_compile_** : compilation de `src/main/java`, processeurs d'annotations compris (Lombok, MapStruct, etc.)
+- _process-classes_ : post-traitement des classes compilées
+- _generate-test-sources_ : génération de code source pour les tests
+- _process-test-sources_ : traitement des sources de test avant compilation
+- _generate-test-resources_ : génération de ressources de test
+- _process-test-resources_ : copie des ressources de test dans `target/test-classes`
+- _test-compile_ : compilation de `src/test/java`
+- _process-test-classes_ : post-traitement des classes de test compilées
 - **_test_** : exécution des tests unitaires
-- _prepare-package_ :
+- _prepare-package_ : dernières préparations avant l'assemblage
 - **_package_** : assemblage du jar / war
-- _pre-integration-test_ :
-- _integration-test_ :
-- _post-integration-test_ :
+- _pre-integration-test_ : préparation de l'environnement des tests d'intégration (le profil `openapi` y démarre WireMock et l'application)
+- _integration-test_ : exécution de ce qui a besoin de l'application démarrée (le profil `openapi` y télécharge la spec OpenAPI)
+- _post-integration-test_ : nettoyage de l'environnement des tests d'intégration (arrêt de l'application)
 - **_verify_** : assertions sur l'état de sortie de l'environnement de build (peu utilisé)
 - **_install_** : copie des packages dans le repo local
 - **_deploy_** : export des packages sur le repo distant
@@ -269,7 +277,7 @@ Dépendances utilisées durant les TPs:
 - `spring-boot-starter-actuator` : liveness et readiness probes
 - `spring-boot-starter-opentelemetry`, `opentelemetry-logback-appender-1.0` et `spring-boot-starter-aspectj` :
   observabilité avec logging et `@Observed`
-- `spring-boot-starter-restclient`, `spring-boot-starter-oauth2-client` et `spring-addons-starter-rest` : consomation
+- `spring-boot-starter-restclient`, `spring-boot-starter-oauth2-client` et `spring-addons-starter-rest` : consommation
   d'un service REST distant autorisé avec OAuth2 (utilisateurs dans Keycloak via son Admin API)
 - `spring-cloud-dependencies`et `spring-cloud-starter-gateway-server-webmvc` : Gateway pour routage avec `TokenRelay`
 - `swagger-annotations` : documentation OpenAPI
@@ -376,9 +384,6 @@ besoin de récupérer la configuration OpenID du provider, nous utiliserons le `
 ```xml
 <profile>
   <id>openapi</id>
-  <properties>
-    <integration-tests.port>8080</integration-tests.port>
-  </properties>
   <dependencies>
     <dependency>
       <groupId>com.github.therapi</groupId>
@@ -396,76 +401,115 @@ besoin de récupérer la configuration OpenID du provider, nous utiliserons le `
   <build>
     <plugins>
       <plugin>
+        <!-- des ports libres, réservés au moment du build (jamais dans <properties>, figées avant) -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>reserve-network-ports</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>reserve-network-port</goal>
+            </goals>
+            <configuration>
+              <portNames>
+                <portName>keycloak-wiremock.port</portName>
+                <portName>integration-tests.port</portName>
+                <portName>spring-boot-jmx.port</portName>
+              </portNames>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>uk.co.automatictester</groupId>
         <artifactId>wiremock-maven-plugin</artifactId>
         <executions>
           <execution>
-            <id>start-wiremock</id>
-            <phase>pre-integration-test</phase>
+            <id>keycloak-wiremock</id>
             <goals>
               <goal>run</goal>
+              <goal>stop</goal>
             </goals>
             <configuration>
-              <dir>src/test/resources/wiremock</dir>
-              <params>--port=8089</params>
+              <dir>src/test/resources/wiremock/keycloak</dir>
+              <params>--port=${keycloak-wiremock.port}</params>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-maven-plugin</artifactId>
+        <configuration>
+          <apiDocsUrl>${integration-tests.scheme}://${integration-tests.hostname}:${integration-tests.port}/v3/api-docs</apiDocsUrl>
+        </configuration>
+        <executions>
+          <execution>
+            <id>integration-test</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <profiles>h2,no-observability</profiles>
+          <!-- commun à start et stop -->
+          <jmxPort>${spring-boot-jmx.port}</jmxPort>
+        </configuration>
+        <executions>
+          <execution>
+            <id>pre-integration-test</id>
+            <goals>
+              <goal>start</goal>
+            </goals>
+            <configuration>
+              <arguments>
+                <argument>--issuer=http://localhost:${keycloak-wiremock.port}/auth/realms/labs</argument>
+                <argument>--server.port=${integration-tests.port}</argument>
+              </arguments>
             </configuration>
           </execution>
           <execution>
-            <id>stop-wiremock</id>
-            <phase>post-integration-test</phase>
+            <id>post-integration-test</id>
             <goals>
               <goal>stop</goal>
             </goals>
           </execution>
         </executions>
       </plugin>
-      <plugin>
-          <groupId>org.springdoc</groupId>
-          <artifactId>springdoc-openapi-maven-plugin</artifactId>
-          <configuration>
-            <apiDocsUrl>${integration-tests.scheme}://${integration-tests.hostname}:${integration-tests.port}/v3/api-docs</apiDocsUrl>
-          </configuration>
-          <executions>
-            <execution>
-              <id>integration-test</id>
-              <goals>
-                <goal>generate</goal>
-              </goals>
-            </execution>
-          </executions>
-      </plugin>
-      <plugin>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-maven-plugin</artifactId>
-          <configuration>
-            <profiles>h2</profiles>
-          </configuration>
-          <executions>
-            <execution>
-              <id>pre-integration-test</id>
-              <goals>
-                <goal>start</goal>
-              </goals>
-              <configuration>
-                <arguments>
-                  <argument>--issuer=http://localhost:8089/auth/realms/labs</argument>
-                </arguments>
-                <environmentVariables>
-                  <!--SERVER_SSL_ENABLED>false</SERVER_SSL_ENABLED-->
-                </environmentVariables>
-              </configuration>
-            </execution>
-            <execution>
-              <id>post-integration-test</id>
-              <goals>
-                <goal>stop</goal>
-              </goals>
-            </execution>
-          </executions>
-      </plugin>
     </plugins>
   </build>
 </profile>
+```
+
+Aucun port n'est figé : le `build-helper-maven-plugin` réserve trois ports libres au moment du build (celui de WireMock,
+celui de l'application, celui de JMX par lequel le goal `stop` arrête l'application), et chaque plugin les lit. Un
+port fixe (8081, 8089...) échoue dès qu'une autre application l'occupe : le service lancé depuis l'IDE, un second
+build en parallèle, un autre projet. Les ports réservés ne sont jamais déclarés dans les `<properties>` du pom : Maven
+les y figerait avant que la réservation ne les fixe. Le plugin est déclaré en premier : dans la phase
+`pre-integration-test`, il s'exécute avant WireMock et le démarrage de l'application.
+
+Comme le port de WireMock change à chaque build, sa réponse de découverte OpenID ne peut pas écrire l'URL de l'émetteur
+en dur : elle la compose avec le _response templating_ de WireMock, à partir de l'URL de la requête.
+
+```json
+{
+  "request": { "method": "GET", "url": "/auth/realms/labs/.well-known/openid-configuration" },
+  "response": {
+    "status": 200,
+    "transformers": ["response-template"],
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "issuer": "{{{request.baseUrl}}}/auth/realms/labs",
+      "jwks_uri": "{{{request.baseUrl}}}/auth/realms/labs/protocol/openid-connect/certs"
+    }
+  }
+}
 ```
 
 ##### T.P.
@@ -538,7 +582,7 @@ Il faut ensuite l'exécuter dans chaque module avec :
         <inputSpec>${project.basedir}/../keycloak-admin-api.openapi.json</inputSpec>
         <apiPackage>org.keycloak.admin.api</apiPackage>
         <modelPackage>org.keycloak.admin.model</modelPackage>
-        <!-- prevent a name colllision between the
+        <!-- prevent a name collision between the
         deprecated authTime (Integer) and the new auth_time
         (Long) in IDToken -->
         <nameMappings>auth_time=authTimeLong</nameMappings>
@@ -595,7 +639,12 @@ Retour à la branche principale après T.P.
 ### 1.6. <a name="maven-build-resources-handling"/>Manipulation des ressources
 
 Par défaut, Maven utilise les ressources de `src/main/resources` et `src/test/resources` telles quelles. Il est possible
-de modifier ce comportement dans le `buils`. Par exemple :
+de modifier ce comportement dans le `build`. Dès qu'un bloc `<resources>` est déclaré, il **remplace** les répertoires
+par défaut au lieu de les compléter : il faut alors y lister aussi `src/main/resources`.
+
+Un répertoire de ressources peut aussi être _filtré_ : Maven y remplace des expressions par la valeur de ses propriétés
+(`project.version`, `project.artifactId`, etc.). Le parent de Spring Boot change le délimiteur en `@...@` pour que ces
+expressions ne se confondent pas avec les placeholders `${...}` de Spring.
 
 ```xml
 <resources>
@@ -603,10 +652,51 @@ de modifier ce comportement dans le `buils`. Par exemple :
     <directory>src/main/resources</directory>
   </resource>
   <resource>
-    <directory>../../certs</directory>
+    <directory>src/main/resources-filtered</directory>
+    <filtering>true</filtering>
   </resource>
 </resources>
 ```
+
+```properties
+# src/main/resources-filtered/META-INF/rest-hero-build.properties
+build.artifact=@project.artifactId@
+build.version=@project.version@
+```
+
+#### Jamais de clé privée dans un jar
+
+Ce que contient un jar se copie, se publie et s'embarque dans des images : un jar ne doit contenir **ni clé privée, ni
+keystore, ni mot de passe de keystore**. Une version précédente de ce support déclarait le dossier `certs/` comme
+répertoire de ressources pour lire le certificat dans le classpath : la clé privée de développement se retrouvait alors
+dans chaque jar. Ce n'est plus le cas, de deux manières :
+
+- Les services lisent leur certificat et sa clé dans un dossier extérieur au jar, désigné par la variable
+  d'environnement `REST_HERO_CERTS_DIR` (`build-0-env.sh` l'écrit dans `.env`) :
+
+```yml
+dev-certs-dir: ${REST_HERO_CERTS_DIR}
+spring:
+  ssl:
+    bundle:
+      pem:
+        self-signed:
+          keystore:
+            certificate: file:${dev-certs-dir}/${cn}.crt
+            private-key: file:${dev-certs-dir}/${cn}.key
+```
+
+- Le build le vérifie. Le pom parent déclare, pour tous ses modules, une exécution de `maven-antrun-plugin` en phase
+  `verify` qui lance `api/jar-content-check.xml` sur le jar produit, et échoue en nommant chaque entrée interdite
+  (`*.key`, `*.jks`, `*.p12`, `password.txt`, ou un fichier PEM contenant une clé privée) :
+
+```
+jar-content-check: .../currency-service-0.0.1-SNAPSHOT.jar contains a private key, a keystore or a keystore password, which must never be packaged:
+BOOT-INF/classes/leaked.key
+```
+
+  On retire alors le fichier du module, jamais la vérification. Les images construites par Spring Boot ne reçoivent que
+  le certificat (dossier `certs/ca-certificates`), sans clé.
 
 ##### T.P.
 
@@ -722,28 +812,16 @@ public class RestConfiguration {
 
 Il est possible de surcharger le _qualifier_ par défaut lors de la définition d'un bean comme lors de son injection avec `@Qualifier`.
 
-Pour rendre une dépendance optionnelle (on s'attend à ce qu'il soit possible que la configuration de l'application puisse ne pas fournir un bean), typer cette dépendance avec `Optional<T>` :
+Pour rendre une dépendance optionnelle (on s'attend à ce qu'il soit possible que la configuration de l'application puisse ne pas fournir un bean), typer cette dépendance avec `Optional<T>`, ou avec `ObjectProvider<T>` quand il peut y en avoir zéro, un ou plusieurs. Le module `rest-hero-problem` laisse ainsi chaque application déclarer, ou non, des exclusions à son traitement des exceptions :
 
 ```java
-@TestConfiguration
-public class SpringDataWebConvertersTestConfiguration {
-  @Autowired(required = false)
-  Optional<AccountRepository> accountRepo;
+@Configuration(proxyBeanMethods = false)
+public class ProblemWebMvcConfiguration implements WebMvcConfigurer {
+  private final List<ProblemResolutionExclusion> exclusions;
 
-  @Bean
-  WebMvcConfigurer configurer() {
-    return new WebMvcConfigurer() {
-      @Override
-      public void addFormatters(FormatterRegistry registry) {
-        registry
-            .addConverter(
-                String.class,
-                Account.class,
-                iban -> accountRepo
-                    .flatMap(r -> iban == null ? Optional.empty() : r.findByIban(Iban.of(iban)))
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND)));
-      }
-    };
+  public ProblemWebMvcConfiguration(ObjectProvider<ProblemResolutionExclusion> exclusions) {
+    // aucune, une ou plusieurs, dans l'ordre de leur @Order
+    this.exclusions = exclusions.orderedStream().toList();
   }
 }
 ```
@@ -835,10 +913,16 @@ La configuration Spring Boot s'appuie en grande partie sur les _properties_ avec
 ```yaml
 spring:
   datasource:
-    password: change-me
+    password: ${SPRING_DATASOURCE_PASSWORD}
 ```
 
-Les propriétés qui sont définies dans `application.yml` peuvent être surchargées par
+Une valeur peut référencer une variable d'environnement avec un _placeholder_ : `${NOM}` est remplacé par la valeur de la
+variable, et `${NOM:défaut}` par `défaut` quand elle n'est pas définie. Pour un secret, pas de valeur par défaut :
+l'application refuse de démarrer plutôt que d'utiliser un mot de passe prévisible. `build-0-env.sh` écrit les valeurs
+de développement dans le fichier `.env` (ignoré par Git), que `build-openapi.sh` charge et qu'une run config d'IDE peut
+charger.
+
+Les propriétés qui sont définies dans `application.yml` peuvent aussi être surchargées par
 
 - des variables d'environnement
 
@@ -1033,6 +1117,63 @@ Les dépendances injectées par Spring peuvent être :
 - remplacées par des `@MockitoBean` (ou des implémentations spécifiques aux tests)
 - importées explicitement avec `@Import({})` si elles ne font pas partie de la _tranche_ prévue par Spring
 
+#### Ce qu'un test prouve
+
+Un test ne prouve un comportement que s'il **atteint le code visé** et **vérifie le résultat observable**. Deux pièges
+reviennent souvent :
+
+- **une assertion trop large.** `status().is4xxClientError()` est satisfait par un `400`, un `401`, un `403` ou un
+  `404` : un tel test passe aussi quand la requête est refusée avant le contrôleur, pour une raison qui n'a rien à voir
+  avec le cas testé. On vérifie le statut exact et le contrat d'erreur (voir [4.4](#rest-controller-exceptions)) : le
+  `type` du problème, ses `parameters`, ou ses `invalidFields` pour une erreur de validation.
+- **plusieurs cas dans un test.** Un test qui envoie successivement un IBAN mal formé, un montant négatif et une devise
+  inconnue s'arrête au premier échec et ne dit pas lequel des cas est couvert. Une seule violation par test, nommée
+  dans le nom du test (`givenAMalformedIban_whenCreateAccount_thenValidationProblem`).
+
+Pour les `@RestController`, on écrit pour chaque endpoint un test par cas :
+
+- **accès** : anonyme (`401`), utilisateur sans le droit requis (`403`), utilisateur autorisé (succès) ;
+- **succès** : `201` avec l'en-tête `Location` exact pour une création, `204` et le collaborateur appelé pour une
+  modification ou une suppression ;
+- **validation** : un champ invalide par test, `422` de type `validation`, le champ dans `invalidFields` ;
+- **rejets du framework** : paramètre obligatoire absent, corps qui n'est pas du JSON, variable de chemin impossible à
+  convertir, `400` de type `invalid-request` ;
+- **problèmes métier** : un test par `ProblemType` que l'endpoint peut renvoyer, avec ses `parameters`.
+
+```java
+@WebMvcTest(controllers = AccountController.class, properties = "server.ssl.enabled=false")
+@Import({IbanStringMapper.class, AccountMapperImpl.class, WebConfiguration.class, SecurityConfig.class})
+@AutoConfigureAddonsWebmvcResourceServerSecurity
+class AccountControllerTest {
+
+  @MockitoBean
+  AccountRepository accountRepo;
+
+  @Autowired
+  MockMvcSupport api;
+
+  @Test
+  @WithJwt("advisor.json")
+  void givenAMalformedIban_whenCreateAccount_thenValidationProblem() throws Exception {
+    api
+        .post(new AccountCreationRequest("not-an-iban", "customer-subject", "XPF"), AccountController.BASE_PATH)
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.type").value(ProblemType.VALIDATION.uri().toString()))
+        .andExpect(jsonPath("$.invalidFields.iban").isString());
+  }
+}
+```
+
+- `MockMvcSupport` (spring-addons) enveloppe `MockMvc` : `get(path, variables...)`, `post(corps, path, variables...)`,
+  `put(...)`, `delete(...)`, le corps sérialisé en JSON avec le bon `Content-Type`.
+- `@WithJwt("advisor.json")` construit l'authentification à partir des claims du fichier `advisor.json` des ressources
+  de test, avec le même convertisseur que l'application : les autorités sont celles qu'aurait un vrai jeton.
+- `server.ssl.enabled=false` : avec TLS actif, la configuration du serveur de ressources redirige toute requête `http`
+  vers `https`, et chaque test recevrait un `302`.
+
+Un test qui n'a jamais échoué n'a encore rien prouvé. Pour s'en assurer, on retire le code qu'il protège et on vérifie
+qu'il échoue pour la raison attendue : c'est ce que fait le T.P. 4.4 en retirant l'advice qui traduit les exceptions.
+
 ##### T.P.
 
 Initialisation :
@@ -1058,10 +1199,17 @@ Les composants à configurer dans les applications qui l'utilisent sont définis
 ```
 com.c4soft.resthero.commons.CommonWebConfiguration
 com.c4soft.resthero.commons.domain.IbanStringMapper
-com.c4soft.resthero.commons.exception.CommonExceptionsHandler
+com.c4soft.resthero.commons.messaging.EventsRabbitConfiguration
 ```
 
 Lors de la création de starters, il est important d'être peu intrusif et de laisser la main à l'application pour surcharger l'auto-configuration proposée. Les annotations `@ConditionalOn...` telles que `@ConditionalOnMissingBean` et `@ConditionalOnProperty` peuvent alors trouver tout leur intérêt.
+
+Le projet a un second starter, `rest-hero-problem`, qui porte le contrat d'erreur de toutes les applications
+([4.4](#rest-controller-exceptions)). Ses composants ne sont pas dans le _component scan_ des services (ils sont dans le
+package `com.c4soft.resthero.problem`) : c'est le fichier d'imports qui les apporte. Un second fichier,
+`META-INF/spring/org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureWebMvc.imports`, les apporte aussi aux
+tranches de test `@WebMvcTest`, qui n'appliquent pas l'auto-configuration générale : sans lui, un test de contrôleur
+passerait avec des réponses d'erreur différentes de celles de l'application.
 
 ##### T.P.
 
@@ -1098,7 +1246,14 @@ Son `@Id` correspond à la clef primaire de la table.
 
 Elle doit avoir un constructeur par défaut (sans paramètre) dont la visibilité peut être restreinte.
 
-Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `hasCode` à la (ou aux) propriété (s) `@Id`.
+Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `hashCode` à la (ou aux) propriété(s) `@Id`.
+
+Une entité expose ses propriétés en lecture (`@Getter`), pas en écriture : pas de `@Data` ni de `@Setter`. Elle change
+par des **méthodes métier** nommées comme ce qui arrive dans le domaine (`activate()`, `changeCeilings(...)`,
+`credit(...)`), qui gardent ses invariants : un setter laisse n'importe quel appelant la mettre dans un état interdit
+(un compte crédité dans une autre devise). Hibernate (accès par les champs) et MapStruct n'ont pas besoin de setters.
+Une entité modifiée après sa création porte un `@Version` : deux mises à jour concurrentes ne s'écrasent pas, la seconde
+échoue (`409 concurrent-modification`, voir [4.4](#rest-controller-exceptions)).
 
 ```java
 @Entity
@@ -1109,16 +1264,25 @@ Il est possible (et souvent recommandé) de limiter les méthodes `equals` et `h
 @Builder(access = AccessLevel.PROTECTED)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PROTECTED)
-public class Card {
+public class Card implements Serializable {
 
   @Id
+  @Column(name = "number")
   @EqualsAndHashCode.Include
   @ToString.Include
   private String number;
 
-  @Column(nullable = false)
-  @ToString.Include
-  private String accountNumber;
+  @Version
+  @Column(name = "version", nullable = false)
+  private long version;
+
+  @Column(name = "active", nullable = false)
+  @Builder.Default
+  private boolean active = false;
+
+  public void activate() {
+    this.active = true;
+  }
 
   // ...
 }
@@ -1145,10 +1309,10 @@ Retour à la branche principale après T.P.
 H2 et PostgreSQL utilisent les séquences pour les identifiants numériques auto-générés (pas de PK auto-incrémentée comme
 MySQL par exemple).
 
-`@GenratedValue` indique qu'une valeur est fournie par la BDD lors du 1er enregistrement d'une entité. Elle est associée
+`@GeneratedValue` indique qu'une valeur est fournie par la BDD lors du 1er enregistrement d'une entité. Elle est associée
 à `@Id` et doit référencer un générateur (dans le cas de H2 ou de PostgreSQL, une séquence).
 
-Les séquences sont décrites avec `@Generator`.
+Les séquences sont décrites avec `@SequenceGenerator`.
 
 ```java
 @Id
@@ -1417,12 +1581,12 @@ Retour à la branche principale après T.P.
 
 Les opérations d'accès aux données en base se font à l'intérieur d'une transaction.
 
-On utilise `@Transactionnal` pour déclarer qu'une méthode doit être exécutée à l'intérieur d'une transaction.
+On utilise `@Transactional` pour déclarer qu'une méthode doit être exécutée à l'intérieur d'une transaction.
 
 Les relations (`@OneToMany`, `@OneToOne`, etc.) étant _lazy_ par défaut, il faut parcourir le graphe d'objet à
 l'intérieur de la transaction dans laquelle la racine a été récupérée.
 
-Le plus simple est généralement de décorer les méthodes de `@Controller` avec `@Transactionnal`, mais la logique métier
+Le plus simple est généralement de décorer les méthodes de `@Controller` avec `@Transactional`, mais la logique métier
 demande parfois plus de finesse (différentes méthodes exécutées dans des transactions différentes pour que certaines
 soient `commit` alors que d'autres sont `rollback`).
 
@@ -1546,6 +1710,85 @@ Retour à la branche principale après T.P.
 ./exit-lab.sh --reset
 ```
 
+### 3.10. <a name="jpa-liquibase"/>Migrations de schéma avec Liquibase
+
+Les tables ne sont jamais créées par Hibernate (`spring.jpa.hibernate.ddl-auto: none`) : le schéma est décrit par des
+**changesets** Liquibase, que l'application applique au démarrage (`spring.liquibase.change-log`). Liquibase note dans la
+table `databasechangelog` chaque changeset appliqué, avec une somme de contrôle : il n'applique un changeset qu'une fois,
+et refuse de démarrer si un changeset déjà appliqué a été modifié.
+
+D'où la règle : **un changeset appliqué ne se modifie jamais**. Pour changer le schéma, on ajoute un changeset, dans un
+nouveau fichier inclus après les autres :
+
+```xml
+<databaseChangeLog ...>
+    <!-- les changesets déjà appliqués, inchangés -->
+    <changeSet id="1785605112050-1" author="ch4mp">...</changeSet>
+
+    <include file="changes/1792864800000-1-beneficiaries-renamed-unique-per-customer.xml"
+             relativeToChangelogFile="true"/>
+</databaseChangeLog>
+```
+
+Exemple : la table des bénéficiaires s'appelait `benficiaries`, avec une contrainte unique sur le libellé seul et une
+autre sur l'IBAN seul, si bien que deux clients ne pouvaient pas avoir chacun un bénéficiaire « Maman ». Le changelog
+de `customer-service` qui corrige cela renomme les tables, remplace les contraintes par des contraintes **par client**
+et ajoute la colonne de `@Version` :
+
+```xml
+<changeSet id="1792864800000-3" author="ch4mp">
+    <renameTable oldTableName="benficiaries" newTableName="beneficiaries"/>
+    <renameTable oldTableName="benficiaries_aud" newTableName="beneficiaries_aud"/>
+</changeSet>
+<changeSet id="1792864800000-6" author="ch4mp">
+    <dropUniqueConstraint tableName="beneficiaries" constraintName="uc_43f2eae19d0eabc0cf5df4d4d"/>
+    <dropUniqueConstraint tableName="beneficiaries" constraintName="uc_a5c37d5691418578ecd3de5fc"/>
+    <addUniqueConstraint tableName="beneficiaries" columnNames="iban, customer_id"
+                         constraintName="uc_beneficiaries_iban_customer_id"/>
+    <addUniqueConstraint tableName="beneficiaries" columnNames="label, customer_id"
+                         constraintName="uc_beneficiaries_label_customer_id"/>
+</changeSet>
+<changeSet id="1792864800000-7" author="ch4mp">
+    <addColumn tableName="beneficiaries">
+        <column name="version" type="BIGINT" defaultValueNumeric="0">
+            <constraints nullable="false"/>
+        </column>
+    </addColumn>
+</changeSet>
+```
+
+Quelques points d'attention :
+
+- **Une même migration pour plusieurs bases.** Les tests et le profil `h2` utilisent H2, la production PostgreSQL. Tous
+  les changements Liquibase ne sont pas supportés partout (H2 refuse `renameSequence` et l'`incrementBy` de
+  `alterSequence`) : l'attribut `dbms` d'un changeset le réserve à une base, et un changeset frère dit la même chose
+  à l'autre.
+- **Les tables d'audit d'Envers.** Une révision de suppression (`revtype = 2`) n'enregistre que l'identifiant : les
+  colonnes métier d'une table `_aud` doivent accepter `null`, sinon la suppression elle-même échoue.
+- **Les séquences.** Une séquence qui avance de 50 alors que l'entité réserve ses identifiants un par un
+  (`allocationSize = 1`) donne des trous, et la validation du schéma la refuse.
+
+Le schéma est vérifié par les tests : `@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")` démarre
+Liquibase sur une base H2 vide, puis Hibernate compare chaque entité au schéma obtenu (tables, colonnes, types,
+séquences) et refuse de démarrer à la moindre différence. Les contraintes que la validation ne voit pas (unicité,
+nullabilité des tables d'audit) ont leurs propres tests (`BeneficiaryPersistenceTest`, `BeneficiaryRepositoryTest`).
+
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 3.10
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
+
 ## 4. <a name="rest-controller"/>Services REST WebMvc avec Spring Boot
 
 Nous nous intéressons ici aux `@RestController` qui forment la façade visible d'une API REST.
@@ -1576,10 +1819,12 @@ Pour rappel :
   créer. La réponse devrait être en statut `201 Created`, ne pas avoir de _body_ et porter un header `Location` pointant
   vers la ressource créée.
 - `PUT` est attendu pour une modification de ressource existante et devrait porter un _body_ avec les informations de
-  mise à jour. Il est attendu une réponse dans le champ `2xx` sans _body_ (par exemple `202 Accepted` ou `204 No-content`).
+  mise à jour. La réponse est `204 No Content` : la modification est faite quand la réponse part.
 - `DELETE` est attendu pour supprimer une ressource et ne doit pas porter de _body_ (l'URL doit suffire à identifier la
-  ressource à supprimer). Il est attendu une réponse dans le champ `2xx` sans _body_ (par exemple `202 Accepted` ou
-  `204 No-content`).
+  ressource à supprimer). La réponse est `204 No Content`, pour la même raison.
+- `202 Accepted` est réservé aux traitements **asynchrones** : la requête est prise en compte, mais son effet n'est pas
+  encore visible quand la réponse part (un traitement par lot, une file de messages). Le renvoyer sur un `PUT` synchrone
+  ment au client, qui ne sait plus s'il doit relire la ressource ou attendre.
 - `PATCH` est attendu pour la mise à jour partielle d'une ressource (les propriétés manquantes du _body_ sont ignorées).
   Elle est peu usitée et parfois mal supportée par les clients, donc à éviter.
 
@@ -1612,20 +1857,21 @@ Spring Web comporte de nombreux mécanismes de (dé)sérialisation, notamment :
 - JSON (avec Jackson) : convertit les `@RequestBody` et `@ResponseBody`
 - le `FormatterRegistry` : enregistre des convertisseurs à appliquer sur les `@PathVariable` et `@RequestParam`.
 
-Les `JpaRepository<E, ID>` pour les `@Entity` ayant `Integer`, `Long` ou `String` comme type sont enregistrés dans le
-`FormatterRegistry`.
-
-En considérant que `MyEntity` a un `@Id Long id` et qu'il existe un `JpaRepository<MyEntity, Long>`, alors un requête
-`GET /resources/42` est routée sur la fonction suivante où `entity` est l'entité avec l'identifiant `42` :
+Spring Data enregistre dans le `FormatterRegistry` un `DomainClassConverter` pour les `@Entity` dont un
+`JpaRepository<E, ID>` existe (avec `Integer`, `Long` ou `String` comme type d'identifiant). En considérant que
+`MyEntity` a un `@Id Long id` et qu'il existe un `JpaRepository<MyEntity, Long>`, une requête `GET /resources/42` est
+routée sur la fonction suivante où `entity` est l'entité avec l'identifiant `42` :
 
 ```java
 @GetMapping("/resources/{resourceId}")
 Resource getResource(@PathVariable("resourceId") MyEntity entity);
 ```
 
-Il est possible d'ajouter des converters dans le registry en fournissant une `@Configuration` qui implémente
-`WebMvcConfigurer`. Par exemple, pour ajouter une conversion automatique d'un compte depuis son `Iban`
-(`AccountRepository extends JpaRepository<Account, Iban>`):
+Mais quand l'identifiant n'existe pas, ce convertisseur renvoie `null`, et la méthode est appelée avec un argument
+`null` (ou Spring répond `500`). Dans ce projet, **chaque variable de chemin a son convertisseur explicite**, déclaré
+dans une `@Configuration` qui implémente `WebMvcConfigurer`, et qui lève le problème typé de la ressource
+([4.4](#rest-controller-exceptions)) quand elle n'existe pas : le client reçoit un `404` dont le `type` dit **quoi** est
+introuvable. Un `Converter` ne peut pas déclarer d'exception checkée : le problème est levé `.unchecked()`.
 
 ```java
 @Configuration
@@ -1647,7 +1893,13 @@ public class WebConfiguration implements WebMvcConfigurer {
     @Override
     public @Nullable Account convert(@Nullable String source) {
       final var iban = ibanStringMapper.map(source);
-      return iban == null ? null : accountRepo.findByIban(iban).orElse(null);
+      if (iban == null) {
+        return null;
+      }
+      return accountRepo.findByIban(iban).orElseThrow(() -> new ApiProblemException(
+          ProblemType.ACCOUNT_NOT_FOUND,
+          "No account with IBAN %s".formatted(iban.toHumanReadableString()),
+          Map.of("iban", iban.toHumanReadableString())).unchecked());
     }
   }
 }
@@ -1723,6 +1975,15 @@ public @interface CurrencyIso3 {
 Je recommande de laisser passer `null` et de combiner les annotations avec `@NotNull` pour rendre un paramètre /
 attribut obligatoire.
 
+Une violation est une erreur du **client**, pas du serveur : la réponse est `422 Unprocessable Content`, en
+`application/problem+json`, de type `validation`, avec une propriété `invalidFields` qui associe à chaque champ fautif
+le code de la contrainte violée (c'est ce que le frontend affiche sous le champ). Trois exceptions portent ces
+violations, selon ce qui est validé : `MethodArgumentNotValidException` (un `@RequestBody @Valid`),
+`HandlerMethodValidationException` (un `@RequestParam` ou une `@PathVariable` annotés) et
+`ConstraintViolationException` (une validation hors contrôleur). Le module `rest-hero-problem` les traduit toutes les
+trois ([4.4](#rest-controller-exceptions)) ; le test de contrôleur vérifie le `422`, le `type` et le champ nommé dans
+`invalidFields`, pas un vague `4xx`.
+
 ##### T.P.
 
 Initialisation :
@@ -1748,23 +2009,62 @@ Les exceptions sont interceptées dans deux cas principaux :
 - on souhaite la contourner (il y a un _plan B_ pour continuer le traitement)
 - on souhaite la mapper vers un autre type d'exception (exception technique traduite en exception métier)
 
-Les `@ExceptionHandler` déclarés dans un `@RestControllerAdvice` servent intercepter des exceptions et à définir la
-réponse à envoyer :
+Ce qui sort d'une API REST en cas d'erreur est un **contrat** au même titre que les réponses nominales : le client doit
+pouvoir distinguer les cas sans lire un message en anglais. Ce projet suit la [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
+(_problem details_) avec un module partagé, `rest-hero-problem` (un starter, voir [2.7](#spring-boot-starter)) :
+
+- `ProblemType` est une énumération **fermée** des types de problèmes de l'application : les génériques
+  (`unauthenticated`, `access-denied`, `not-found`, `invalid-request`, `validation`, `server-error`...) et les types
+  métier (`account-not-found`, `beneficiary-iban-already-registered`, `card-transaction-ceiling-exceeded`...). Chaque
+  type a un statut HTTP et une URN (`urn:rest-hero:problem:account-not-found`) qui sert de **clef de traduction** au
+  frontend ;
+- `ApiProblemDetail` porte le `type`, le statut, un `detail` technique (en anglais, pour les logs et le développeur) et
+  des `parameters` **typés** (l'IBAN refusé, le plafond dépassé, le montant...) avec lesquels le frontend compose le
+  message localisé ;
+- `ApiProblemException` est une exception **checkée** : une méthode de contrôleur qui la lève le déclare dans sa clause
+  `throws`, et son `@Transactional` porte `rollbackFor = ApiProblemException.class` (par défaut, Spring ne fait le
+  rollback que sur les `RuntimeException`). Là où une checkée ne peut pas être déclarée (un `Converter`, une lambda),
+  `.unchecked()` l'enveloppe dans une `ApiProblemRuntimeException` que le handler déballe ;
+- `ApiExceptionHandler`, un `@RestControllerAdvice`, écrit les `ApiProblemDetail` des `ApiProblemException` et des
+  trois exceptions de validation (en `422`, avec les `invalidFields`, voir [4.3](#rest-controller-validation)) ;
+  `DataAccessProblemHandler` traduit les conflits JPA (`409`) ; un `HandlerExceptionResolver` et le contrôleur `/error`
+  servent de filet pour tout le reste (rejets du framework en `400 invalid-request`, erreurs inattendues en
+  `500 server-error`, dont le détail reste dans les logs).
+
+```java
+@Transactional(rollbackFor = ApiProblemException.class)
+@PostMapping(BASE_PATH)
+public ResponseEntity<Void> createAccount(@RequestBody @Valid AccountCreationRequest dto) throws ApiProblemException {
+  final var iban = Iban.of(dto.iban());
+  if (accountRepo.existsByIban(iban)) {
+    throw new ApiProblemException(
+        ProblemType.ACCOUNT_ALREADY_MANAGED,
+        "The account-service already manages account %s".formatted(iban.toHumanReadableString()),
+        Map.of("iban", iban.toHumanReadableString()));
+  }
+  // ...
+}
+```
+
+Les `@ExceptionHandler` déclarés dans un `@RestControllerAdvice` interceptent les exceptions et définissent la réponse à
+envoyer. C'est l'annotation `@RestControllerAdvice` qui les rend visibles à **tous** les contrôleurs :
 
 ```java
 @RestControllerAdvice
-public class CommonExceptionsHandler {
+public class ApiExceptionHandler {
 
-  @ExceptionHandler(DataIntegrityViolationException.class)
-  public ResponseEntity<ProblemDetail> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
-    final var detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-    return ResponseEntity.status(detail.getStatus()).body(detail);
+  @ExceptionHandler(ApiProblemException.class)
+  public ResponseEntity<ApiProblemDetail> handleApiProblem(ApiProblemException ex) {
+    return ResponseEntity.status(ex.getType().status())
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(ex.toProblemDetail());
   }
 }
 ```
 
-Lorsque créer et intercepter une exception métier n'a pas d'intérêt intrinsèque, un raccourci est de soulever une
-`ErrorResponseException` pour laquelle Spring fournit déjà un `@ExceptionHandler`.
+À ne **pas** faire : lever une `ResponseStatusException` ou une `ErrorResponseException` avec un message libre. Le
+statut est alors choisi au cas par cas, le `type` est vide, et le message (souvent celui d'une exception technique, SQL
+ou réponse d'un autre service) part tel quel au client. Un type de problème coûte une ligne dans `ProblemType`.
 
 ##### T.P.
 
@@ -1882,39 +2182,47 @@ com:
                 oauth2-registration-id: account-service
 ```
 
-Lors d'une erreur pendant l'appel REST, `RestClient` soulève une `HttpClientErrorException`. Il est fortement recommandé
-d'intercepter de telles erreurs et de les translater vers quelque chose ajoutant des logs et du contexte métier.
+Lors d'une erreur pendant l'appel REST, `RestClient` soulève une `RestClientException` : une
+`HttpClientErrorException` ou `HttpServerErrorException` quand le service répond (chacune a une sous-classe par statut,
+`HttpClientErrorException.NotFound` par exemple), une `ResourceAccessException` quand il ne répond pas. Il faut les
+intercepter **par type** et les traduire en problème de notre contrat ([4.4](#rest-controller-exceptions)) : le cas
+attendu (ici, un client inconnu) devient le type métier qui le décrit ; tout le reste devient
+`DOWNSTREAM_SERVICE_ERROR` (`502`), dont le détail reste dans **nos** logs. La réponse du service aval, son statut et son
+message ne partent jamais au client : ils ne font pas partie de notre contrat.
 
 ```java
-try{
+try {
   customersApi.getCustomer(dto.customerId());
-} catch (HttpClientErrorException e){
-  if (HttpStatus.NOT_FOUND.equals(e.getStatusCode())) {
-    log.warn("Rejecting account {} creation for unknown customer {}",iban, dto.customerId());
-    throw new ResourceNotFoundException("Customer %s is not known by the customer-service".formatted(dto.iban()));
-  }
-  log.error(
-      "Unexpected error while checking customer {} existence in customer-service",
-      dto.customerId(),
-      e);
-  throw new ResponseStatusException(
-      HttpStatus.INTERNAL_SERVER_ERROR,
-      "Unexpected error while checking customer existence",
-      e);
+} catch (HttpClientErrorException.NotFound e) {
+  log.warn("Rejecting account {} creation for unknown customer {}", iban, dto.customerId());
+  throw new ApiProblemException(
+      ProblemType.CUSTOMER_NOT_FOUND,
+      "Customer %s is not known by the customer-service".formatted(dto.customerId()),
+      Map.of("customerId", dto.customerId()));
+} catch (RestClientException e) {
+  log.error("Unexpected error while checking customer {} existence in customer-service", dto.customerId(), e);
+  throw new ApiProblemException(
+      ProblemType.DOWNSTREAM_SERVICE_ERROR,
+      "The customer-service could not confirm that the customer exists",
+      Map.of("service", "customer-service"));
 }
 ```
 
-    ##### T.P.
-    Initialisation :
-    ```bash
-    ./start-lab.sh 4.6
-    ```
-    Retour à la branche principale après T.P.
-    ```bash
-    ./exit-lab.sh --keep
-    # ou pour restaurer l'état initial du TP
-    ./exit-lab.sh --reset
-    ```
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 4.6
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
 
 ### 4.7. <a name="rest-controller-logging"/>Logs
 
@@ -1997,33 +2305,18 @@ Pour activer la mise en cache dans l'application :
 </dependency>
 ```
 
-````java
+```java
 @Configuration
 @EnableCaching
 public class CacheConfiguration {
   // Nécessaire seulement pour spring.cache.type=simple (Caffeine et autres caches managés par Boot fournissent leur CacheManager)
   @Bean
-
-##### T.P.
-Initialisation :
-```bash
-./start-lab.sh 5
-````
-
-Retour à la branche principale après T.P.
-
-```bash
-./exit-lab.sh --keep
-# ou pour restaurer l'état initial du TP
-./exit-lab.sh --reset
+  CacheManager cacheManager() {
+    return new ConcurrentMapCacheManager();
+  }
+}
 ```
 
-CacheManager cacheManager() {
-return new ConcurrentMapCacheManager();
-}
-}
-
-````
 ```yml
 spring:
   cache:
@@ -2034,7 +2327,7 @@ spring:
     type: caffeine
     caffeine:
       spec: expireAfterWrite=60m
-````
+```
 
 Pour déclarer un ou plusieurs caches, on décore généralement une classe :
 
@@ -2059,9 +2352,25 @@ Lorsqu'une classe expose une interface publique plus importante que nécessaire,
 gestion des caches. Je recommande dans ce cas de faire un proxy n'exposant que le strict nécessaire et de gérer les caches
 à ce niveau.
 
+##### T.P.
+
+Initialisation :
+
+```bash
+./start-lab.sh 5
+```
+
+Retour à la branche principale après T.P.
+
+```bash
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
+```
+
 ## 6. <a name="messaging"/>Messagerie asynchrone et notifications temps réel
 
-Nous étudions ici le méchanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans rafraîchissement de page ni polling.
+Nous étudions ici le mécanisme par lequel le serveur notifie le frontend qu'un évènement concernant l'utilisateur connecté vient de se produire (par exemple un virement reçu), sans rafraîchissement de page ni polling.
 
 L'architecture retenue a trois maillons :
 
@@ -2073,7 +2382,11 @@ L'architecture retenue a trois maillons :
 
 Le choix du SSE (plutôt que WebSocket/STOMP) tient aussi à la sécurité déjà en place : le flux SSE est exposé sous
 `/bff/**`, donc protégé par les mêmes cookies de session que le reste du BFF (voir l'introduction), sans complication
-supplémentaire de handshake ni de CSRF puisqu'un abonnement SSE est un simple `GET`.
+supplémentaire de handshake ni de CSRF puisqu'un abonnement SSE est un simple `GET`. La gateway le réserve aux
+sessions authentifiées par deux verrous : son `permit-all` liste une à une les routes relayées aux services (dont le
+contrôle d'accès appartient au service), jamais `/bff/**` en bloc, si bien que `/bff/events` n'y figure pas ; et le
+contrôleur porte `@PreAuthorize("isAuthenticated()")`, qui tient même si la liste s'élargit un jour. Sans session,
+l'abonnement reçoit un `401` de type `unauthenticated`, sans URL de connexion.
 
 Aucune des trois briques n'a besoin de connaître le token `Bearer` de l'utilisateur ni son cookie de session : la
 publication d'un évènement est un aller RabbitMQ interne au backend (authentifié par des identifiants applicatifs,
@@ -2169,13 +2482,15 @@ pouvoir être notifié de ses évolutions.
 Initialisation :
 
 ```bash
-./lab.sh 6.1
+./start-lab.sh 6.1
 ```
 
-Retour à la branche principale après T.P. :
+Retour à la branche principale après T.P.
 
 ```bash
-git switch main
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
 ```
 
 ### 6.2. <a name="messaging-gateway-sse"/>Relais par la gateway : RabbitMQ vers Server-Sent Events
@@ -2236,7 +2551,7 @@ public void broadcast(DomainEvent event) {
 }
 ```
 
-La gateway n'a besoin d'aucune connaissance métier pour ça : elle ne que comparer
+La gateway n'a besoin d'aucune connaissance métier pour ça : elle ne fait que comparer
 des chaînes de caractères (`subject`, rôles).
 
 `@PreAuthorize("isAuthenticated()")` garantit un 401 plutôt qu'un
@@ -2257,7 +2572,7 @@ public SseEmitter subscribeToServerStateChangedEvents(Authentication auth) {
 }
 ```
 
-L'annotation `@ApiResponse` est nécessaire pour documenter ce flux dans la spec OpenAPI : `SseEmitter` n'est un type générique Java (`ServerSentEvent<DomainEvent>`).
+L'annotation `@ApiResponse` est nécessaire pour documenter ce flux dans la spec OpenAPI : `SseEmitter` n'est pas un type générique Java (`ServerSentEvent<DomainEvent>`).
 
 Enfin, le relais proprement dit : un `@RabbitListener` reçoit l'évènement désérialisé et le diffuse aux abonnés
 concernés :
@@ -2276,18 +2591,20 @@ public void onDomainEvent(DomainEvent event) {
 Initialisation :
 
 ```bash
-./lab.sh 6.2
+./start-lab.sh 6.2
 ```
 
-Retour à la branche principale après T.P. :
+Retour à la branche principale après T.P.
 
 ```bash
-git switch main
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
 ```
 
 ### 6.3. <a name="messaging-frontend"/>Abonnement du frontend
 
-Le front du TP étant une application React utilisant [TANSTACK Query](https://tanstack.com/query/latest), un hook ouvre le flux SSE tant que l'utilisateur est authentifié, et invalide les entrées de cache concernées par le type de ressource reçu plutôt (le type d'évènement n'est pasutilisé) :
+Le front du TP étant une application React utilisant [TANSTACK Query](https://tanstack.com/query/latest), un hook ouvre le flux SSE tant que l'utilisateur est authentifié, et invalide les entrées de cache concernées par le type de ressource reçu (le type d'évènement n'est pas utilisé) :
 
 ```ts
 function invalidateForEvent(
@@ -2355,13 +2672,15 @@ Ce TP n'a pas d'exercice à trous. C'est un TP d'observation.
 Initialisation :
 
 ```bash
-./lab.sh 6.3
+./start-lab.sh 6.3
 ```
 
-Retour à la branche principale après T.P. :
+Retour à la branche principale après T.P.
 
 ```bash
-git switch main
+./exit-lab.sh --keep
+# ou pour restaurer l'état initial du TP
+./exit-lab.sh --reset
 ```
 
 <p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/">

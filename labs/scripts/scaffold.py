@@ -35,6 +35,8 @@ TODO: décrire ce que le stagiaire doit être capable de faire à l'issue du TP.
 
 ## Consignes
 
+Lancer `./start-lab.sh {lab_id}` pour créer la branche `lab/{lab_id}`.
+
 TODO: décrire ce qu'il doit reconstruire (s'appuyer sur les `// TODO` laissés
 dans le code par les marqueurs `LAB:{lab_id}:...`, s'il y en a).
 """

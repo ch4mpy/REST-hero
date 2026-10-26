@@ -11,7 +11,7 @@ documentation ne couvre que la donnée, pas le protocole SSE en entier).
 
 ## Consignes
 
-Lancer `./lab.sh 6.2` pour créer la branche `lab/6.2`.
+Lancer `./start-lab.sh 6.2` pour créer la branche `lab/6.2`.
 
 1. Lancer `mvn -pl gateway clean compile`. Constater l'échec de compilation sur tout le package
    `com.c4soft.resthero.gateway.events` : `package org.springframework.amqp.core does not exist`,

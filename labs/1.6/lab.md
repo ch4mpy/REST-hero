@@ -11,15 +11,15 @@ veut continuer à le voir copié.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.6` pour créer la branche `lab/1.6`.
+Lancer `./start-lab.sh 1.6` pour créer la branche `lab/1.6`.
 
 1. Lancer `mvn -pl gateway -am clean package -DskipTests`. Le build réussit (`BUILD SUCCESS`), ce qui peut donner
    une fausse impression que tout va bien. Inspecter pourtant le jar produit
    (`unzip -l gateway/target/gateway-*.jar | grep -i application`) : `application.yml`, `banner.txt` et
    `logback-spring.xml` (normalement présents dans `src/main/resources`) sont absents du jar.
 2. Retrouver dans `api/gateway/pom.xml` (repère `LAB:1.6`, dans `<build><resources>`) l'entrée manquante pour
-   `src/main/resources`, et la reconstruire aux côtés de celle pour `../../certs`. Relancer le build et vérifier
-   que `application.yml` est de nouveau présent dans le jar.
+   `src/main/resources`, et la reconstruire aux côtés de celle pour `src/main/resources-filtered`. Relancer le build
+   et vérifier que `application.yml` est de nouveau présent dans le jar.
 3. Expliquer pourquoi le retrait de cette seule entrée suffisait à faire disparaître tous les fichiers de
    `src/main/resources` du jar, sans jamais faire échouer le build : `<resources>` remplace entièrement les
    répertoires par défaut de Maven dès qu'il est déclaré, il ne les complète pas. Un module qui ne déclare aucun
@@ -27,7 +27,12 @@ Lancer `bash ./lab.sh 1.6` pour créer la branche `lab/1.6`.
    défaut.
 4. Ouvrir `application.yml` et repérer des expressions comme `${cn}`, `${reverse-proxy-uri}` ou `${issuer}`.
    Expliquer qu'il s'agit ici de placeholders résolus par Spring au démarrage, et non par le filtering de
-   ressources de Maven (non activé sur ce module). Discuter du risque si le filtering Maven était activé sur ce
-   fichier : la syntaxe `${...}` étant strictement identique pour les deux mécanismes, Maven tenterait de
-   substituer ces expressions avec ses propres propriétés dès `process-resources`, bien avant que Spring n'ait la
-   moindre chance de les résoudre à son tour.
+   ressources de Maven (non activé sur `src/main/resources`). Discuter du risque si le filtering Maven était activé
+   sur ce fichier avec le délimiteur par défaut : la syntaxe `${...}` étant strictement identique pour les deux
+   mécanismes, Maven tenterait de substituer ces expressions avec ses propres propriétés dès `process-resources`,
+   bien avant que Spring n'ait la moindre chance de les résoudre à son tour.
+5. Ouvrir `src/main/resources-filtered/META-INF/rest-hero-build.properties`, qui est filtré, lui, et repérer le
+   délimiteur `@project.version@`. Vérifier que le jar contient les valeurs substituées
+   (`unzip -p gateway/target/gateway-*.jar BOOT-INF/classes/META-INF/rest-hero-build.properties`). Expliquer
+   pourquoi le parent de Spring Boot, qui filtre par défaut les `application*.yml`, a choisi `@...@` comme
+   délimiteur.

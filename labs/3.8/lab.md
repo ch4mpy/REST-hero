@@ -10,7 +10,7 @@ transaction `REQUIRES_NEW` portée par un bean délégué.
 
 ## Consignes
 
-Lancer `./lab.sh 3.8` pour créer la branche `lab/3.8`.
+Lancer `./start-lab.sh 3.8` pour créer la branche `lab/3.8`.
 
 1. Lancer `mvn -pl card-service test -Dtest=CardPaymentServiceApplicationTests -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater l'échec du test de paiement de carte : le paiement ne survit plus à l'échec du virement externe.

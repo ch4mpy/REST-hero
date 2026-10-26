@@ -10,7 +10,7 @@ opération REST `POST`, `PUT` ou `DELETE`.
 
 ## Consignes
 
-Lancer `./lab.sh 4.7` pour créer la branche `lab/4.7`.
+Lancer `./start-lab.sh 4.7` pour créer la branche `lab/4.7`.
 
 1. Lancer `mvn -pl customer-service test -Dtest=CustomerControllerTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Observer la sortie console lors d'une création de client et constater qu'un log d'audit a disparu.

@@ -10,7 +10,7 @@ le même convertisseur peut servir à plusieurs entités du projet.
 
 ## Consignes
 
-Lancer `./lab.sh 3.4` pour créer la branche `lab/3.4`.
+Lancer `./start-lab.sh 3.4` pour créer la branche `lab/3.4`.
 
 1. Lancer `mvn -pl account-service test -Dtest=AccountServiceApplicationTests -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater l'échec au démarrage ou à la persistance : Hibernate ne sait plus convertir correctement le type `Iban`.

@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientException;
 import com.c4soft.resthero.account.api.AccountsApi;
 import com.c4soft.resthero.account.api.MoneyTransfersApi;
 import com.c4soft.resthero.account.model.MoneyTransferRequest;
@@ -40,8 +41,9 @@ import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.Period;
 import com.c4soft.resthero.commons.events.DomainEvent;
 import com.c4soft.resthero.commons.events.ResourceType;
-import com.c4soft.resthero.commons.exception.ResourceNotFoundException;
 import com.c4soft.resthero.commons.validation.ValidPeriod;
+import com.c4soft.resthero.problem.ApiProblemException;
+import com.c4soft.resthero.problem.ProblemType;
 import io.micrometer.observation.annotation.Observed;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -99,33 +101,30 @@ public class CardController {
    * @param dto
    * @param auth
    * @return a response with a `Location` header pointing to the newly created card resource
-   * @throws ResourceNotFoundException if the account is not known by the account service
+   * @throws ApiProblemException {@link ProblemType#ACCOUNT_NOT_FOUND} when the account service
+   *         does not know the account, {@link ProblemType#DOWNSTREAM_SERVICE_ERROR} when it
+   *         answers anything else or cannot be reached
    */
-  @Transactional
+  @Transactional(rollbackFor = ApiProblemException.class)
   @PostMapping(path = BASE_PATH)
   @PreAuthorize("hasAuthority('card.create')")
   public ResponseEntity<Void> createCard(@RequestBody @Valid CardRequest dto, Authentication auth)
-      throws ResourceNotFoundException {
+      throws ApiProblemException {
     // Assert that the account is known by the account service
     com.c4soft.resthero.account.model.AccountResponse account;
     try {
       account = accountsApi.getAccount(dto.iban()).getBody();
-    } catch (HttpClientErrorException e) {
-      if (HttpStatus.NOT_FOUND.equals(e.getStatusCode())) {
-        log.warn("{} atempted to create a card for unknown account {}", auth.getName(), dto.iban());
-        throw new ResourceNotFoundException(
-            "%s account is not known to the account-service".formatted(dto.iban()));
-      }
+    } catch (HttpClientErrorException.NotFound e) {
+      log.warn("{} atempted to create a card for unknown account {}", auth.getName(), dto.iban());
+      throw accountNotFound(dto.iban());
+    } catch (RestClientException e) {
       log
           .error(
               "Error while checking account {} existence for user {}",
               dto.iban(),
               auth.getName(),
               e);
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "Unexpected error while checking account %s existence: %s"
-              .formatted(dto.iban(), e.getMessage()));
+      throw accountServiceError("The account-service could not confirm that the account exists");
     }
     var iban = Iban.of(dto.iban());
     var existingCards = cardRepo.findByIban(iban);
@@ -189,7 +188,7 @@ public class CardController {
    */
   @Transactional
   @PutMapping(path = CARD_STATUS_PATH)
-  @ResponseStatus(HttpStatus.ACCEPTED)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
   @PreAuthorize("hasAuthority('card.status_edit')")
   public void setCardStatus(
       @Parameter(schema = @Schema(type = "string"),
@@ -228,7 +227,7 @@ public class CardController {
    */
   @Transactional
   @PutMapping(path = CARD_CEILINGS_PATH)
-  @ResponseStatus(HttpStatus.ACCEPTED)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
   @PreAuthorize("hasAuthority('card.ceilings_edit')")
   public void setCardCeilings(
       @Parameter(schema = @Schema(type = "string"),
@@ -248,7 +247,7 @@ public class CardController {
             card.getNumber(),
             card.getCeilings(),
             newCeilings);
-    card.setCeilings(newCeilings);
+    card.changeCeilings(newCeilings);
     cardRepo.save(card);
     log.info("{} changed card {} ceilings to {}", auth.getName(), card.getNumber(), newCeilings);
 
@@ -285,10 +284,13 @@ public class CardController {
    * @param card
    * @param dto
    * @return
-   * @throws ResourceNotFoundException if the destination account is not known by the account
-   *         service
+   * @throws ApiProblemException {@link ProblemType#CARD_TRANSACTION_CEILING_EXCEEDED} or
+   *         {@link ProblemType#CARD_ROLLING30_CEILING_EXCEEDED} when a ceiling refuses the payment,
+   *         {@link ProblemType#ACCOUNT_NOT_FOUND} when the account service does not know the
+   *         destination account, {@link ProblemType#DOWNSTREAM_SERVICE_ERROR} when it answers
+   *         anything else or cannot be reached
    */
-  @Transactional(readOnly = false)
+  @Transactional(rollbackFor = ApiProblemException.class)
   @PostMapping(path = PAYMENT_LIST_PATH)
   @PreAuthorize("#card.isActive() && @ac.ownsAccount(#card.getIban().toMachineReadableString())")
   public ResponseEntity<Void> createCardPayment(
@@ -296,7 +298,7 @@ public class CardController {
           description = "The number of the card to create a payment with"))
       @PathVariable(name = CARD_NUMBER_PLACEHOLDER) Card card,
       @RequestBody @Valid CardPaymentCreationRequest dto,
-      Authentication auth) throws ResourceNotFoundException {
+      Authentication auth) throws ApiProblemException {
     // Assert that the destination account is known by the account service
     try {
       log.debug("Retrieving account {} from the account service", dto.destinationIban());
@@ -304,15 +306,23 @@ public class CardController {
       if (card.getCeilings().getTransaction().compareTo(dto.amount()) < 0) {
         log
             .warn(
-                "Card payment with card {} to account {} rejected because the transaction ceiling of %d does not allow this payment of %d",
+                "Card payment with card {} to account {} rejected because the transaction ceiling of {} does not allow this payment of {}",
                 card.getNumber(),
                 dto.destinationIban(),
                 card.getCeilings().getTransaction(),
                 dto.amount());
-        throw new ResponseStatusException(
-            HttpStatus.CONFLICT,
+        throw new ApiProblemException(
+            ProblemType.CARD_TRANSACTION_CEILING_EXCEEDED,
             "Card transaction ceiling set at %d does not allow this payment of %d"
-                .formatted(card.getCeilings().getTransaction(), dto.amount()));
+                .formatted(card.getCeilings().getTransaction(), dto.amount()),
+            Map
+                .of(
+                    "ceiling",
+                    card.getCeilings().getTransaction(),
+                    "amount",
+                    dto.amount(),
+                    "currency",
+                    dto.currency()));
       }
 
       final var cumulatedAmount =
@@ -320,16 +330,26 @@ public class CardController {
       if (card.getCeilings().getRolling30().compareTo(cumulatedAmount + dto.amount()) < 0) {
         log
             .warn(
-                "Card payment with card {} to account {} rejected because the rolling30 ceiling of %d does not allow this payment of %d because the cumulated amount of accepted payments is %d",
+                "Card payment with card {} to account {} rejected because the rolling30 ceiling of {} does not allow this payment of {} because the cumulated amount of accepted payments is {}",
                 card.getNumber(),
                 dto.destinationIban(),
                 card.getCeilings().getRolling30(),
                 dto.amount(),
                 cumulatedAmount);
-        throw new ResponseStatusException(
-            HttpStatus.CONFLICT,
+        throw new ApiProblemException(
+            ProblemType.CARD_ROLLING30_CEILING_EXCEEDED,
             "Card rolling30 ceiling set at %d does not allow this payment of %d because the cumulated amount of accepted payments is %d"
-                .formatted(card.getCeilings().getRolling30(), dto.amount(), cumulatedAmount));
+                .formatted(card.getCeilings().getRolling30(), dto.amount(), cumulatedAmount),
+            Map
+                .of(
+                    "ceiling",
+                    card.getCeilings().getRolling30(),
+                    "amount",
+                    dto.amount(),
+                    "cumulatedAmount",
+                    cumulatedAmount,
+                    "currency",
+                    dto.currency()));
       }
 
       var payment = transactionalCardPaymentHelper.createPayemnt(card, dto);
@@ -373,25 +393,38 @@ public class CardController {
                               payment.getId().toString())))
           .build();
 
-    } catch (HttpClientErrorException e) {
-      if (HttpStatus.NOT_FOUND.equals(e.getStatusCode())) {
-        log
-            .warn(
-                "Card payment with card {} to account {} rejected because the destination account is not known to the account service",
-                card.getNumber(),
-                dto.destinationIban());
-        throw new ResourceNotFoundException(
-            "Destination account %s is not known to the account-service"
-                .formatted(dto.destinationIban()));
-      }
+    } catch (HttpClientErrorException.NotFound e) {
+      log
+          .warn(
+              "Card payment with card {} to account {} rejected because the destination account is not known to the account service",
+              card.getNumber(),
+              dto.destinationIban());
+      throw accountNotFound(dto.destinationIban());
+    } catch (RestClientException e) {
       log
           .error(
               "Error while checking destination account {} existence for card payment with card {}",
               dto.destinationIban(),
               card.getNumber(),
               e);
-      throw e;
+      throw accountServiceError(
+          "The account-service could not confirm that the destination account exists");
     }
+  }
+
+  private static ApiProblemException accountNotFound(String iban) {
+    return new ApiProblemException(
+        ProblemType.ACCOUNT_NOT_FOUND,
+        "Account %s is not known to the account-service".formatted(iban),
+        Map.of("iban", iban));
+  }
+
+  // the account service's answer is for the logs, never for the client: the detail is ours
+  private static ApiProblemException accountServiceError(String detail) {
+    return new ApiProblemException(
+        ProblemType.DOWNSTREAM_SERVICE_ERROR,
+        detail,
+        Map.of("service", "account-service"));
   }
 
   private String resolveAccountOwner(Iban iban) {
@@ -465,7 +498,7 @@ public class CardController {
                         payment.getCard().getNumber(),
                         payment.getDestinationIban().toHumanReadableString()));
         transfersApi.transferMoneyBetweenAccounts(body);
-      } catch (HttpClientErrorException e) {
+      } catch (RestClientException e) {
         log
             .error(
                 "Error while transferring money for card payment {} with card {} to account {}: {}",
@@ -473,10 +506,7 @@ public class CardController {
                 payment.getCard().getNumber(),
                 payment.getDestinationIban(),
                 e.getMessage());
-        throw new ResponseStatusException(
-            HttpStatus.INTERNAL_SERVER_ERROR,
-            "Error while transferring money: %s".formatted(e.getMessage()),
-            e);
+        throw accountServiceError("The account-service could not transfer the money").unchecked();
       }
       log
           .debug(
@@ -484,7 +514,7 @@ public class CardController {
               payment.getId(),
               payment.getCard().getNumber(),
               payment.getDestinationIban());
-      payment.setAccepted(true);
+      payment.accept();
       final var acceptedPayment = paymentRepo.save(payment);
       log.debug("Saved card payment {} as accepted", acceptedPayment.getId());
       return acceptedPayment;

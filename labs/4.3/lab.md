@@ -10,7 +10,7 @@ où placer `@Valid` sur une signature Spring WebMvc.
 
 ## Consignes
 
-Lancer `./lab.sh 4.3` pour créer la branche `lab/4.3`.
+Lancer `./start-lab.sh 4.3` pour créer la branche `lab/4.3`.
 
 1. Lancer `mvn -pl account-service test -Dtest=MoneyTransferControllerTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater que les requêtes contenant des données invalides ne sont plus rejetées comme attendu.

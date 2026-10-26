@@ -44,7 +44,7 @@
         <java.version>25</java.version>
         <spring-cloud.version>2025.1.2</spring-cloud.version>
 
-        <com.c4-soft.springaddons.version>9.1.5</com.c4-soft.springaddons.version>
+        <com.c4-soft.springaddons.version>9.5.2</com.c4-soft.springaddons.version>
 
         <openapi-generator-maven-plugin.version>7.22.0</openapi-generator-maven-plugin.version>
         <swagger-annotations.version>2.2.50</swagger-annotations.version>
@@ -52,10 +52,10 @@
         <springdoc-openapi-maven-plugin.version>1.5</springdoc-openapi-maven-plugin.version>
         <integration-tests.scheme>https</integration-tests.scheme>
         <integration-tests.hostname>localhost</integration-tests.hostname>
-        <integration-tests.port>7080</integration-tests.port>
         <spring.profiles.active></spring.profiles.active>
         <springdoc-openapi.output-dir>${project.basedir}/../../frontend/openapi</springdoc-openapi.output-dir>
         <fmt-maven-plugin.version>2.29</fmt-maven-plugin.version>
+        <nullability-maven-plugin.version>0.3.0</nullability-maven-plugin.version>
         <mapstruct.version>1.7.0.Beta1</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <therapi.version>0.15.0</therapi.version>
@@ -63,7 +63,7 @@
         <opentelemetry-logback-appender-1.0.version>2.28.0-alpha</opentelemetry-logback-appender-1.0.version>
 
         <ca-certificates.binding>
-            ${project.basedir}/../certs/host.docker.internal.jks
+            ${project.basedir}/../../certs/ca-certificates
         </ca-certificates.binding>
 
         <imageName>rest-hero.c4-soft.com/${project.artifactId}:${project.version}</imageName>
@@ -78,6 +78,7 @@
 
     <modules>
         <module>rest-hero-starter-common</module>
+        <module>rest-hero-problem</module>
         <module>currency-service</module>
         <module>customer-service</module>
         <module>account-service</module>
@@ -100,6 +101,11 @@
             <dependency>
                 <groupId>com.c4soft.resthero</groupId>
                 <artifactId>rest-hero-starter-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.c4soft.resthero</groupId>
+                <artifactId>rest-hero-problem</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -182,11 +188,9 @@
                 <version>${nullaway.version}</version>
             </dependency>
 
-            <dependency>
-                <groupId>org.wiremock</groupId>
-                <artifactId>wiremock</artifactId>
-                <version>${wiremock.version}</version>
-            </dependency>
+            <!-- org.wiremock:wiremock is not managed here: wiremock-spring-boot brings the version its
+            wiremock-jetty12 is built against, and a managed one breaks its server
+            (AbstractMethodError). The wiremock-maven-plugin names its own, below. -->
             <dependency>
                 <groupId>org.wiremock</groupId>
                 <artifactId>wiremock-standalone</artifactId>
@@ -270,8 +274,10 @@
                                 <artifactId>therapi-runtime-javadoc-scribe</artifactId>
                             </path>
                             <path>
-                                <groupId>org.hibernate</groupId>
-                                <artifactId>hibernate-jpamodelgen</artifactId>
+                                <!-- the JPA static metamodel (<Entity>_); hibernate-jpamodelgen is now
+                                only a relocation to it -->
+                                <groupId>org.hibernate.orm</groupId>
+                                <artifactId>hibernate-processor</artifactId>
                                 <version>${hibernate.version}</version>
                             </path>
                         </annotationProcessorPaths>
@@ -363,6 +369,13 @@
                     </executions>
                 </plugin>
                 <plugin>
+                    <!-- Error Prone and NullAway on the @NullMarked packages of a module that applies its
+                    configure goal; managed here, applied by the modules that are ready for it. -->
+                    <groupId>am.ik.maven</groupId>
+                    <artifactId>nullability-maven-plugin</artifactId>
+                    <version>${nullability-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
                     <groupId>uk.co.automatictester</groupId>
                     <artifactId>wiremock-maven-plugin</artifactId>
                     <version>${wiremock-maven-plugin.version}</version>
@@ -376,6 +389,36 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <!-- No jar may contain a private key, a keystore or a keystore password:
+                jar-content-check.xml checks the packaged jar in the verify phase. Declared
+                here, so every module inherits it; skipped for this parent (packaging pom).
+                The file is found from the build's root, the folder holding .mvn
+                (maven.multiModuleProjectDirectory), whatever the module's depth. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>jar-content-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target xmlns:unless="ant:unless">
+                                <condition property="jar-content-check.no-jar">
+                                    <equals arg1="${project.packaging}" arg2="pom" />
+                                </condition>
+                                <ant unless:set="jar-content-check.no-jar" antfile="${maven.multiModuleProjectDirectory}/jar-content-check.xml" target="check" inheritAll="false">
+                                    <property name="jar" value="${project.build.directory}/${project.build.finalName}.jar" />
+                                </ant>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
 
     <repositories>

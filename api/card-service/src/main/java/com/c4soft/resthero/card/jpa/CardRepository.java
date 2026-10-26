@@ -21,8 +21,21 @@ public class CardRepository {
 
   private final JpaCardRepository cardRepo;
 
+  /**
+   * A card read through the cache, which the caching lab (5) works on. Requests resolve their card
+   * past the cache ({@link #findStoredByNumber}).
+   */
   @Cacheable(cacheNames = CARD_BY_NUMBER_CACHE)
   public Optional<Card> findByNumber(String number) {
+    return cardRepo.findById(number);
+  }
+
+  /**
+   * The card as stored, read past the cache: a request is authorized on, and changes, the database's
+   * state (a cached instance keeps what a rolled-back request changed in it), and an unknown number
+   * leaves no entry in the cache.
+   */
+  public Optional<Card> findStoredByNumber(String number) {
     return cardRepo.findById(number);
   }
 

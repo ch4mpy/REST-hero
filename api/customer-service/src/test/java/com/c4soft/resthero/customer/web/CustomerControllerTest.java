@@ -1,15 +1,18 @@
 package com.c4soft.resthero.customer.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -20,29 +23,28 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.server.ResponseStatusException;
 import com.c4_soft.springaddons.security.oauth2.test.annotations.WithJwt;
 import com.c4_soft.springaddons.security.oauth2.test.webmvc.AutoConfigureAddonsWebmvcResourceServerSecurity;
+import com.c4_soft.springaddons.security.oauth2.test.webmvc.MockMvcSupport;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapper;
-import com.c4soft.resthero.commons.exception.CommonExceptionsHandler;
 import com.c4soft.resthero.customer.CustomerFixtures;
 import com.c4soft.resthero.customer.SecurityConfig;
-import com.c4soft.resthero.customer.SpringDataWebConvertersTestConfiguration;
+import com.c4soft.resthero.customer.WebConfiguration;
 import com.c4soft.resthero.customer.domain.Beneficiary;
 import com.c4soft.resthero.customer.domain.Customer;
 import com.c4soft.resthero.customer.jpa.BeneficiaryRepository;
 import com.c4soft.resthero.customer.keycloak.CustomerRepository;
+import com.c4soft.resthero.problem.ApiProblemException;
+import com.c4soft.resthero.problem.ProblemType;
 import tools.jackson.databind.ObjectMapper;
 
-@WebMvcTest(controllers = CustomerController.class, properties = {})
-@Import({IbanStringMapper.class, CustomerMapperImpl.class, CommonExceptionsHandler.class,
-        SpringDataWebConvertersTestConfiguration.class, SecurityConfig.class})
+@WebMvcTest(controllers = CustomerController.class, properties = "server.ssl.enabled=false")
+@Import({IbanStringMapper.class, CustomerMapperImpl.class,
+        WebConfiguration.class, SecurityConfig.class})
 @AutoConfigureAddonsWebmvcResourceServerSecurity
 @SuppressWarnings("null")
 class CustomerControllerTest {
@@ -60,19 +62,37 @@ class CustomerControllerTest {
     TopicExchange eventsExchange;
 
     @Autowired
-    MockMvc mockMvc;
+    MockMvcSupport api;
 
     @Autowired
     ObjectMapper json;
 
-    private static Beneficiary beneficiary(
-            Long id,
-            String label,
-            String iban,
-            com.c4soft.resthero.customer.domain.Customer customer) {
+    private static Beneficiary beneficiary(Long id, String label, String iban, Customer customer) {
         final var beneficiary = Mockito.spy(Beneficiary.of(customer.getId(), Iban.of(iban), label));
         when(beneficiary.getId()).thenReturn(id);
         return beneficiary;
+    }
+
+    private Customer givenCustomer(Customer customer) {
+        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
+        return customer;
+    }
+
+    /** The customer's beneficiaries, each one also found by its ID. */
+    private void givenBeneficiaries(Customer customer, Beneficiary... beneficiaries) {
+        when(beneficiaryRepo.findByCustomerId(customer.getId())).thenReturn(List.of(beneficiaries));
+        for (var beneficiary : beneficiaries) {
+            when(beneficiaryRepo.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        }
+    }
+
+    private void assertValidationProblemOn(CustomerCreationRequest dto, String field) throws Exception {
+        api
+                .post(dto, CustomerController.BASE_PATH)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value(ProblemType.VALIDATION.uri().toString()))
+                .andExpect(jsonPath("$.invalidFields." + field).isString());
+        verify(customerRepo, never()).save(any());
     }
 
     // ===================== listCustomers =====================
@@ -80,11 +100,14 @@ class CustomerControllerTest {
     @Test
     @WithAnonymousUser
     void givenAnonymousUser_whenListCustomers_thenUnauthorized() throws Exception {
-        mockMvc
-                .perform(
-                        get("https://localhost" + CustomerController.BASE_PATH)
-                                .queryParam("search", "e"))
-                .andExpect(status().isUnauthorized());
+        api.get(CustomerController.BASE_PATH + "?search={search}", "e").andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenUserIsCustomer_whenListCustomers_thenForbidden() throws Exception {
+        api.get(CustomerController.BASE_PATH + "?search={search}", "e").andExpect(status().isForbidden());
+        verify(customerRepo, never()).listUsers(any(), any());
     }
 
     @Test
@@ -94,14 +117,10 @@ class CustomerControllerTest {
         when(customerRepo.listUsers("bonot", PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(customer), PageRequest.of(0, 20), 1));
 
-        var mvcResult = mockMvc
-                .perform(
-                        get("https://localhost" + CustomerController.BASE_PATH)
-                                .queryParam("search", "bonot"))
+        api
+                .get(CustomerController.BASE_PATH + "?search={search}", "bonot")
                 .andExpect(status().isOk())
-                .andReturn();
-
-        assertThat(mvcResult.getResponse().getContentAsString()).contains(customer.getId());
+                .andExpect(jsonPath("$.content[0].id").value(customer.getId()));
     }
 
     // ===================== createCustomer =====================
@@ -109,103 +128,89 @@ class CustomerControllerTest {
     @Test
     @WithAnonymousUser
     void givenAnonymousUser_whenCreateCustomer_thenUnauthorized() throws Exception {
-        var dto = new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf");
-
-        mockMvc
-                .perform(
-                        post("https://localhost" + CustomerController.BASE_PATH)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(json.writeValueAsString(dto)))
+        api
+                .post(new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf"), CustomerController.BASE_PATH)
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenUserIsCustomer_whenCreateCustomer_thenForbidden() throws Exception {
+        api
+                .post(new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf"), CustomerController.BASE_PATH)
+                .andExpect(status().isForbidden());
+        verify(customerRepo, never()).save(any());
     }
 
     @Test
     @WithJwt("advisor.json")
     void givenNewCustomer_whenCreateCustomer_thenCreated() throws Exception {
-        var dto = new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf");
-
         var newUserId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-
         when(customerRepo.save(any())).thenAnswer(i -> {
             final var customer = Mockito.spy(i.getArgument(0, Customer.class));
             when(customer.getId()).thenReturn(newUserId);
             return customer;
         });
 
-        var mvcResult = mockMvc
-                .perform(
-                        post("https://localhost" + CustomerController.BASE_PATH)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(json.writeValueAsString(dto)))
+        api
+                .post(new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf"), CustomerController.BASE_PATH)
                 .andExpect(status().isCreated())
-                .andReturn();
-
-        assertThat(mvcResult.getResponse().getHeader("Location")).contains(newUserId);
+                .andExpect(header().string(HttpHeaders.LOCATION, CustomerController.BASE_PATH + "/" + newUserId));
     }
 
     @Test
     @WithJwt("advisor.json")
-    void givenExistingCustomer_whenCreateCustomer_thenConflict() throws Exception {
-        var dto = new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf");
-
+    void givenExistingCustomer_whenCreateCustomer_thenCustomerAlreadyExists() throws Exception {
+        // what CustomerRepository throws when Keycloak answers 409
         when(customerRepo.save(any()))
                 .thenThrow(
-                        new ResponseStatusException(
-                                HttpStatus.CONFLICT,
-                                "Customer already exists"));
+                        new ApiProblemException(
+                                ProblemType.CUSTOMER_ALREADY_EXISTS,
+                                "A customer with email jean.bonot@test.pf already exists",
+                                Map.of("email", "jean.bonot@test.pf")).unchecked());
 
-        mockMvc
-                .perform(
-                        post("https://localhost" + CustomerController.BASE_PATH)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(json.writeValueAsString(dto)))
-                .andExpect(status().isConflict());
+        api
+                .post(new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf"), CustomerController.BASE_PATH)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value(ProblemType.CUSTOMER_ALREADY_EXISTS.uri().toString()))
+                .andExpect(jsonPath("$.parameters.email").value("jean.bonot@test.pf"));
+    }
+
+    /** What CustomerRepository throws when Keycloak answers anything else: its answer stays in the logs. */
+    @Test
+    @WithJwt("advisor.json")
+    void givenTheIdentityProviderFails_whenCreateCustomer_thenIdentityProviderErrorWithoutItsAnswer()
+            throws Exception {
+        when(customerRepo.save(any()))
+                .thenThrow(
+                        new ApiProblemException(
+                                ProblemType.IDENTITY_PROVIDER_ERROR,
+                                "Keycloak answered 500 on realm labs: unknown_error",
+                                Map.of()).unchecked());
+
+        api
+                .post(new CustomerCreationRequest("Jean", "Bonot", "jean.bonot@test.pf"), CustomerController.BASE_PATH)
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.type").value(ProblemType.IDENTITY_PROVIDER_ERROR.uri().toString()))
+                .andExpect(content().string(not(containsString("realm labs"))));
     }
 
     @Test
     @WithJwt("advisor.json")
-    void givenInvalidPayload_whenCreateCustomer_thenBadRequest() throws Exception {
-        // missing first name
-        mockMvc
-                .perform(
-                        post("https://localhost" + CustomerController.BASE_PATH)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new CustomerCreationRequest(
-                                                                "",
-                                                                "Bonot",
-                                                                "bonot@test.pf"))))
-                .andExpect(status().is4xxClientError());
+    void givenAnEmptyFirstName_whenCreateCustomer_thenValidationProblem() throws Exception {
+        assertValidationProblemOn(new CustomerCreationRequest("", "Bonot", "bonot@test.pf"), "firstName");
+    }
 
-        // missing last name
-        mockMvc
-                .perform(
-                        post("https://localhost" + CustomerController.BASE_PATH)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new CustomerCreationRequest(
-                                                                "Jean",
-                                                                "",
-                                                                "jean@test.pf"))))
-                .andExpect(status().is4xxClientError());
+    @Test
+    @WithJwt("advisor.json")
+    void givenAnEmptyLastName_whenCreateCustomer_thenValidationProblem() throws Exception {
+        assertValidationProblemOn(new CustomerCreationRequest("Jean", "", "jean@test.pf"), "lastName");
+    }
 
-        // invalid email
-        mockMvc
-                .perform(
-                        post("https://localhost" + CustomerController.BASE_PATH)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new CustomerCreationRequest(
-                                                                "Jean",
-                                                                "Bonot",
-                                                                "not-an-email"))))
-                .andExpect(status().is4xxClientError());
+    @Test
+    @WithJwt("advisor.json")
+    void givenAMalformedEmail_whenCreateCustomer_thenValidationProblem() throws Exception {
+        assertValidationProblemOn(new CustomerCreationRequest("Jean", "Bonot", "not-an-email"), "email");
     }
 
     // ===================== getCustomer =====================
@@ -213,28 +218,24 @@ class CustomerControllerTest {
     @Test
     @WithAnonymousUser
     void givenAnonymousUser_whenGetCustomer_thenUnauthorized() throws Exception {
-        mockMvc
-                .perform(get("https://localhost" + CustomerController.CUSTOMER_PATH, "some-id"))
-                .andExpect(status().isUnauthorized());
+        api.get(CustomerController.CUSTOMER_PATH, "some-id").andExpect(status().isUnauthorized());
     }
 
     @Test
     @WithJwt("advisor.json")
-    void givenUserIsGrantedWithReadAny_whenGetCustomerWithKnownCustomerId_thenOk()
-            throws Exception {
-        var customer = CustomerFixtures.createJeanBonot();
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
-
-        var mvcResult = mockMvc
-                .perform(
-                        get(
-                                "https://localhost" + CustomerController.CUSTOMER_PATH,
-                                customer.getId()))
-                .andExpect(status().isOk())
-                .andReturn();
+    void givenUserIsGrantedWithReadAny_whenGetCustomerWithKnownCustomerId_thenOk() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
 
         var actual = json
-                .readValue(mvcResult.getResponse().getContentAsString(), CustomerResponse.class);
+                .readValue(
+                        api
+                                .get(CustomerController.CUSTOMER_PATH, customer.getId())
+                                .andExpect(status().isOk())
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString(),
+                        CustomerResponse.class);
+
         assertThat(actual.id()).isEqualTo(customer.getId());
         assertThat(actual.firstName()).isEqualTo(customer.getFirstName());
     }
@@ -242,259 +243,307 @@ class CustomerControllerTest {
     @Test
     @WithJwt("john-deuf.json")
     void givenUserIsCustomer_whenGetCustomerWithCustomerId_thenOk() throws Exception {
-        var customer = CustomerFixtures.createJohnDeuf();
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
 
-        var mvcResult = mockMvc
-                .perform(
-                        get(
-                                "https://localhost" + CustomerController.CUSTOMER_PATH,
-                                customer.getId()))
+        api
+                .get(CustomerController.CUSTOMER_PATH, customer.getId())
                 .andExpect(status().isOk())
-                .andReturn();
-
-        var actual = json
-                .readValue(mvcResult.getResponse().getContentAsString(), CustomerResponse.class);
-        assertThat(actual.id()).isEqualTo(customer.getId());
-        assertThat(actual.firstName()).isEqualTo(customer.getFirstName());
+                .andExpect(jsonPath("$.id").value(customer.getId()));
     }
 
     @Test
     @WithJwt("john-deuf.json")
-    void givenUserIsCustomer_whenGetCustomerWithSomeoneElseId_thenForbiden() throws Exception {
-        var jefHini = CustomerFixtures.createJefHini();
-        when(customerRepo.findById(jefHini.getId())).thenReturn(Optional.of(jefHini));
+    void givenUserIsCustomer_whenGetCustomerWithSomeoneElseId_thenForbidden() throws Exception {
+        var jefHini = givenCustomer(CustomerFixtures.createJefHini());
 
-        mockMvc
-                .perform(
-                        get(
-                                "https://localhost" + CustomerController.CUSTOMER_PATH,
-                                jefHini.getId()))
-                .andExpect(status().isForbidden());
+        api.get(CustomerController.CUSTOMER_PATH, jefHini.getId()).andExpect(status().isForbidden());
     }
 
     @Test
     @WithJwt("advisor.json")
-    void givenUnknownCustomerId_whenGetCustomer_thenNotFound() throws Exception {
+    void givenUnknownCustomerId_whenGetCustomer_thenCustomerNotFound() throws Exception {
         when(customerRepo.findById("unknown-id")).thenReturn(Optional.empty());
 
-        mockMvc
-                .perform(get("https://localhost" + CustomerController.CUSTOMER_PATH, "unknown-id"))
-                .andExpect(status().isNotFound());
+        api
+                .get(CustomerController.CUSTOMER_PATH, "unknown-id")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value(ProblemType.CUSTOMER_NOT_FOUND.uri().toString()))
+                .andExpect(jsonPath("$.parameters.customerId").value("unknown-id"));
     }
 
-    // ===================== beneficiaries =====================
+    // ===================== listBeneficiaries =====================
 
     @Test
     @WithJwt("advisor.json")
     void givenUserIsGrantedWithReadAny_whenListBeneficiaries_thenOk() throws Exception {
         var customer = CustomerFixtures.createJeanBonot();
-        var beneficiary = beneficiary(1L, "Electricity", "FR761111222233334443", customer);
-        when(beneficiaryRepo.findByCustomerId(customer.getId())).thenReturn(List.of(beneficiary));
+        givenBeneficiaries(customer, beneficiary(1L, "Electricity", "FR761111222233334443", customer));
 
-        var mvcResult = mockMvc
-                .perform(
-                        get(
-                                "https://localhost" + CustomerController.BENEFICIARIES_PATH,
-                                customer.getId()))
+        api
+                .get(CustomerController.BENEFICIARIES_PATH, customer.getId())
                 .andExpect(status().isOk())
-                .andReturn();
-
-        assertThat(mvcResult.getResponse().getContentAsString()).contains("Electricity");
-        assertThat(mvcResult.getResponse().getContentAsString()).contains("FR761111222233334443");
+                .andExpect(jsonPath("$[0].label").value("Electricity"))
+                .andExpect(jsonPath("$[0].iban").value("FR761111222233334443"));
     }
 
     @Test
     @WithJwt("john-deuf.json")
     void givenUserIsCustomer_whenListOwnBeneficiaries_thenOk() throws Exception {
         var customer = CustomerFixtures.createJohnDeuf();
-        var beneficiary = beneficiary(2L, "Landlord", "FR761111222233334441", customer);
-        when(beneficiaryRepo.findByCustomerId(customer.getId())).thenReturn(List.of(beneficiary));
+        givenBeneficiaries(customer, beneficiary(2L, "Landlord", "FR761111222233334441", customer));
 
-        mockMvc
-                .perform(
-                        get(
-                                "https://localhost" + CustomerController.BENEFICIARIES_PATH,
-                                customer.getId()))
-                .andExpect(status().isOk());
+        api.get(CustomerController.BENEFICIARIES_PATH, customer.getId()).andExpect(status().isOk());
     }
+
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenUserIsCustomer_whenListSomeoneElsesBeneficiaries_thenForbidden() throws Exception {
+        var jefHini = CustomerFixtures.createJefHini();
+
+        api.get(CustomerController.BENEFICIARIES_PATH, jefHini.getId()).andExpect(status().isForbidden());
+        verify(beneficiaryRepo, never()).findByCustomerId(any());
+    }
+
+    // ===================== addBeneficiary =====================
 
     @Test
     @WithAnonymousUser
     void givenAnonymousUser_whenAddBeneficiary_thenUnauthorized() throws Exception {
-        var customer = CustomerFixtures.createJeanBonot();
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
 
-        mockMvc
-                .perform(
-                        post(
-                                "https://localhost" + CustomerController.BENEFICIARIES_PATH,
-                                customer.getId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new BeneficiaryRequest(
-                                                                "FR761111222233334443",
-                                                                "Savings"))))
+        api
+                .post(
+                        new BeneficiaryRequest("FR761111222233334443", "Savings"),
+                        CustomerController.BENEFICIARIES_PATH,
+                        customer.getId())
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     @WithJwt("john-deuf.json")
+    void givenUserIsCustomer_whenAddBeneficiaryToSomeoneElse_thenForbidden() throws Exception {
+        var jefHini = givenCustomer(CustomerFixtures.createJefHini());
+
+        api
+                .post(
+                        new BeneficiaryRequest("FR761111222233334443", "Savings"),
+                        CustomerController.BENEFICIARIES_PATH,
+                        jefHini.getId())
+                .andExpect(status().isForbidden());
+        verify(beneficiaryRepo, never()).save(any(Beneficiary.class));
+    }
+
+    @Test
+    @WithJwt("john-deuf.json")
     void givenUserIsCustomer_whenAddBeneficiary_thenCreated() throws Exception {
-        var customer = CustomerFixtures.createJohnDeuf();
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
         when(beneficiaryRepo.save(any(Beneficiary.class))).thenAnswer(invocation -> {
             var saved = Mockito.spy(invocation.getArgument(0, Beneficiary.class));
             when(saved.getId()).thenReturn(7L);
             return saved;
         });
 
-        var mvcResult = mockMvc
-                .perform(
-                        post(
-                                "https://localhost" + CustomerController.BENEFICIARIES_PATH,
-                                customer.getId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new BeneficiaryRequest(
-                                                                "FR761111222233334443",
-                                                                "Savings"))))
+        api
+                .post(
+                        new BeneficiaryRequest("FR761111222233334443", "Savings"),
+                        CustomerController.BENEFICIARIES_PATH,
+                        customer.getId())
                 .andExpect(status().isCreated())
-                .andReturn();
-
-        assertThat(mvcResult.getResponse().getHeader("Location"))
-                .isEqualTo("/customers/%s/beneficiaries/7".formatted(customer.getId()));
+                .andExpect(
+                        header()
+                                .string(
+                                        HttpHeaders.LOCATION,
+                                        "/customers/%s/beneficiaries/7".formatted(customer.getId())));
     }
 
     @Test
     @WithJwt("john-deuf.json")
-    void givenDuplicateBeneficiaryIban_whenAddBeneficiary_thenConflict() throws Exception {
-        var customer = CustomerFixtures.createJohnDeuf();
-        var beneficiary = beneficiary(1L, "Existing", "FR761111222233334443", customer);
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(beneficiaryRepo.findByCustomerId(customer.getId())).thenReturn(List.of(beneficiary));
+    void givenDuplicateBeneficiaryIban_whenAddBeneficiary_thenIbanAlreadyRegistered() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
+        givenBeneficiaries(customer, beneficiary(1L, "Existing", "FR761111222233334443", customer));
 
-        mockMvc
-                .perform(
-                        post(
-                                "https://localhost" + CustomerController.BENEFICIARIES_PATH,
-                                customer.getId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new BeneficiaryRequest(
-                                                                "FR761111222233334443",
-                                                                "Other label"))))
-                .andExpect(status().isConflict());
+        api
+                .post(
+                        new BeneficiaryRequest("FR761111222233334443", "Other label"),
+                        CustomerController.BENEFICIARIES_PATH,
+                        customer.getId())
+                .andExpect(status().isConflict())
+                .andExpect(
+                        jsonPath("$.type").value(ProblemType.BENEFICIARY_IBAN_ALREADY_REGISTERED.uri().toString()))
+                .andExpect(
+                        jsonPath("$.parameters.iban")
+                                .value(Iban.of("FR761111222233334443").toHumanReadableString()));
+        verify(beneficiaryRepo, never()).save(any(Beneficiary.class));
     }
+
+    /** Labels are compared without case: "savings" is the label "Savings" again. */
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenDuplicateBeneficiaryLabel_whenAddBeneficiary_thenLabelAlreadyRegistered() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
+        givenBeneficiaries(customer, beneficiary(1L, "Savings", "FR761111222233334443", customer));
+
+        api
+                .post(
+                        new BeneficiaryRequest("FR761111222233334441", "savings"),
+                        CustomerController.BENEFICIARIES_PATH,
+                        customer.getId())
+                .andExpect(status().isConflict())
+                .andExpect(
+                        jsonPath("$.type").value(ProblemType.BENEFICIARY_LABEL_ALREADY_REGISTERED.uri().toString()))
+                .andExpect(jsonPath("$.parameters.label").value("savings"));
+        verify(beneficiaryRepo, never()).save(any(Beneficiary.class));
+    }
+
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenAMalformedIban_whenAddBeneficiary_thenValidationProblem() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
+
+        api
+                .post(new BeneficiaryRequest("not-an-iban", "Savings"), CustomerController.BENEFICIARIES_PATH, customer.getId())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value(ProblemType.VALIDATION.uri().toString()))
+                .andExpect(jsonPath("$.invalidFields.iban").isString());
+    }
+
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenAnEmptyLabel_whenAddBeneficiary_thenValidationProblem() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
+
+        api
+                .post(new BeneficiaryRequest("FR761111222233334443", ""), CustomerController.BENEFICIARIES_PATH, customer.getId())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.invalidFields.label").isString());
+    }
+
+    // ===================== getBeneficiary =====================
 
     @Test
     @WithJwt("advisor.json")
     void givenKnownCustomerAndBeneficiary_whenGetBeneficiary_thenOk() throws Exception {
-        var customer = CustomerFixtures.createJeanBonot();
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
         var beneficiary = beneficiary(3L, "Internet", "FR761111222233334443", customer);
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(beneficiaryRepo.findByCustomerId(customer.getId())).thenReturn(List.of(beneficiary));
-        when(beneficiaryRepo.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
-
-        var mvcResult = mockMvc
-                .perform(
-                        get(
-                                "https://localhost" + CustomerController.BENEFICIARY_PATH,
-                                customer.getId(),
-                                beneficiary.getId()))
-                .andExpect(status().isOk())
-                .andReturn();
+        givenBeneficiaries(customer, beneficiary);
 
         var actual = json
-                .readValue(mvcResult.getResponse().getContentAsString(), BeneficiaryResponse.class);
+                .readValue(
+                        api
+                                .get(CustomerController.BENEFICIARY_PATH, customer.getId(), beneficiary.getId())
+                                .andExpect(status().isOk())
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString(),
+                        BeneficiaryResponse.class);
+
         assertThat(actual.id()).isEqualTo(beneficiary.getId());
         assertThat(actual.label()).isEqualTo(beneficiary.getLabel());
         assertThat(actual.iban()).isEqualTo("FR761111222233334443");
     }
 
     @Test
-    @WithJwt("john-deuf.json")
-    void givenUserIsCustomer_whenUpdateBeneficiaryWithUniqueValues_thenAccepted() throws Exception {
-        var customer = CustomerFixtures.createJohnDeuf();
-        var beneficiary = beneficiary(4L, "Rent", "FR761111222233334441", customer);
-        var other = beneficiary(5L, "Power", "FR761111222233334443", customer);
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(beneficiaryRepo.findByCustomerId(customer.getId()))
-                .thenReturn(List.of(beneficiary, other));
-        when(beneficiaryRepo.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
-        when(beneficiaryRepo.save(any(Beneficiary.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+    @WithJwt("advisor.json")
+    void givenUnknownBeneficiaryId_whenGetBeneficiary_thenBeneficiaryNotFound() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
+        when(beneficiaryRepo.findById(99L)).thenReturn(Optional.empty());
 
-        mockMvc
-                .perform(
-                        put(
-                                "https://localhost" + CustomerController.BENEFICIARY_PATH,
-                                customer.getId(),
-                                beneficiary.getId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new BeneficiaryRequest(
-                                                                "FR761111222233334444",
-                                                                "Taxes"))))
-                .andExpect(status().isAccepted());
+        api
+                .get(CustomerController.BENEFICIARY_PATH, customer.getId(), 99L)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value(ProblemType.BENEFICIARY_NOT_FOUND.uri().toString()))
+                .andExpect(jsonPath("$.detail").value("No beneficiary with ID 99"))
+                .andExpect(jsonPath("$.parameters.length()").value(1))
+                .andExpect(jsonPath("$.parameters.beneficiaryId").value("99"));
+    }
+
+    /** A zero-padded ID gets the canonical one back, as for another customer's beneficiary. */
+    @Test
+    @WithJwt("advisor.json")
+    void givenAZeroPaddedUnknownBeneficiaryId_whenGetBeneficiary_thenItsCanonicalIdIsAnswered() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
+        when(beneficiaryRepo.findById(3L)).thenReturn(Optional.empty());
+
+        api
+                .get(CustomerController.BENEFICIARY_PATH, customer.getId(), "03")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No beneficiary with ID 3"))
+                .andExpect(jsonPath("$.parameters.beneficiaryId").value("3"));
+    }
+
+    /** Reached through another customer's path, a beneficiary gets the answer of an unknown ID, word for word. */
+    @Test
+    @WithJwt("advisor.json")
+    void givenTheBeneficiaryOfAnotherCustomer_whenGetBeneficiary_thenBeneficiaryNotFound() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
+        var jefHini = CustomerFixtures.createJefHini();
+        var othersBeneficiary = beneficiary(3L, "Internet", "FR761111222233334443", jefHini);
+        givenBeneficiaries(jefHini, othersBeneficiary);
+
+        api
+                .get(CustomerController.BENEFICIARY_PATH, customer.getId(), othersBeneficiary.getId())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value(ProblemType.BENEFICIARY_NOT_FOUND.uri().toString()))
+                .andExpect(jsonPath("$.detail").value("No beneficiary with ID 3"))
+                .andExpect(jsonPath("$.parameters.length()").value(1))
+                .andExpect(jsonPath("$.parameters.beneficiaryId").value("3"));
+    }
+
+    // ===================== updateBeneficiary =====================
+
+    @Test
+    @WithJwt("john-deuf.json")
+    void givenUserIsCustomer_whenUpdateBeneficiaryWithUniqueValues_thenNoContent() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
+        var beneficiary = beneficiary(4L, "Rent", "FR761111222233334441", customer);
+        givenBeneficiaries(customer, beneficiary, beneficiary(5L, "Power", "FR761111222233334443", customer));
+        when(beneficiaryRepo.save(any(Beneficiary.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        api
+                .put(
+                        new BeneficiaryRequest("FR761111222233334444", "Taxes"),
+                        CustomerController.BENEFICIARY_PATH,
+                        customer.getId(),
+                        beneficiary.getId())
+                .andExpect(status().isNoContent());
 
         assertThat(beneficiary.getLabel()).isEqualTo("Taxes");
-        assertThat(beneficiary.getIban().toMachineReadableString())
-                .isEqualTo("FR761111222233334444");
+        assertThat(beneficiary.getIban().toMachineReadableString()).isEqualTo("FR761111222233334444");
+        verify(beneficiaryRepo).save(beneficiary);
     }
 
     @Test
     @WithJwt("john-deuf.json")
-    void givenDuplicateBeneficiaryLabel_whenUpdateBeneficiary_thenConflict() throws Exception {
-        var customer = CustomerFixtures.createJohnDeuf();
+    void givenDuplicateBeneficiaryLabel_whenUpdateBeneficiary_thenLabelAlreadyRegistered() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJohnDeuf());
         var beneficiary = beneficiary(4L, "Rent", "FR761111222233334441", customer);
-        var other = beneficiary(5L, "Power", "FR761111222233334443", customer);
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(beneficiaryRepo.findByCustomerId(customer.getId()))
-                .thenReturn(List.of(beneficiary, other));
-        when(beneficiaryRepo.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        givenBeneficiaries(customer, beneficiary, beneficiary(5L, "Power", "FR761111222233334443", customer));
 
-        mockMvc
-                .perform(
-                        put(
-                                "https://localhost" + CustomerController.BENEFICIARY_PATH,
-                                customer.getId(),
-                                beneficiary.getId())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        json
-                                                .writeValueAsString(
-                                                        new BeneficiaryRequest(
-                                                                "FR761111222233334444",
-                                                                "Power"))))
-                .andExpect(status().isConflict());
+        api
+                .put(
+                        new BeneficiaryRequest("FR761111222233334444", "Power"),
+                        CustomerController.BENEFICIARY_PATH,
+                        customer.getId(),
+                        beneficiary.getId())
+                .andExpect(status().isConflict())
+                .andExpect(
+                        jsonPath("$.type").value(ProblemType.BENEFICIARY_LABEL_ALREADY_REGISTERED.uri().toString()))
+                .andExpect(jsonPath("$.parameters.label").value("Power"));
+        verify(beneficiaryRepo, never()).save(any(Beneficiary.class));
     }
+
+    // ===================== deleteBeneficiary =====================
 
     @Test
     @WithJwt("advisor.json")
-    void givenKnownCustomerAndBeneficiary_whenDeleteBeneficiary_thenAccepted() throws Exception {
-        var customer = CustomerFixtures.createJeanBonot();
+    void givenKnownCustomerAndBeneficiary_whenDeleteBeneficiary_thenNoContent() throws Exception {
+        var customer = givenCustomer(CustomerFixtures.createJeanBonot());
         var beneficiary = beneficiary(9L, "School", "FR761111222233334443", customer);
-        when(customerRepo.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(beneficiaryRepo.findByCustomerId(customer.getId())).thenReturn(List.of(beneficiary));
-        when(beneficiaryRepo.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
-        when(customerRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        givenBeneficiaries(customer, beneficiary);
 
-        mockMvc
-                .perform(
-                        delete(
-                                "https://localhost" + CustomerController.BENEFICIARY_PATH,
-                                customer.getId(),
-                                beneficiary.getId()))
-                .andExpect(status().isAccepted());
+        api
+                .delete(CustomerController.BENEFICIARY_PATH, customer.getId(), beneficiary.getId())
+                .andExpect(status().isNoContent());
 
         verify(beneficiaryRepo).delete(beneficiary);
     }

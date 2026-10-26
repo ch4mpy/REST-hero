@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-5.0.xsd"
+        objectQuotingStrategy="QUOTE_ONLY_RESERVED_WORDS">
+    <!-- the revision entity allocates one number at a time (allocationSize = 1) -->
+    <changeSet id="1792864800000-1" author="ch4mp" dbms="postgresql">
+        <alterSequence sequenceName="revinfo_seq" incrementBy="1"/>
+    </changeSet>
+    <!-- the same for H2 -->
+    <changeSet id="1792864800000-2" author="ch4mp" dbms="h2">
+        <sql>ALTER SEQUENCE revinfo_seq INCREMENT BY 1</sql>
+    </changeSet>
+    <!-- the tables get the right spelling -->
+    <changeSet id="1792864800000-3" author="ch4mp">
+        <renameTable oldTableName="benficiaries" newTableName="beneficiaries"/>
+        <renameTable oldTableName="benficiaries_aud" newTableName="beneficiaries_aud"/>
+    </changeSet>
+    <!-- and the sequence, keeping its current value -->
+    <changeSet id="1792864800000-4" author="ch4mp" dbms="postgresql">
+        <renameSequence oldSequenceName="benficiaries_seq" newSequenceName="beneficiaries_seq"/>
+    </changeSet>
+    <!-- H2 renames no sequence: its in-memory base is new at each start, the sequence is recreated -->
+    <changeSet id="1792864800000-5" author="ch4mp" dbms="h2">
+        <dropSequence sequenceName="benficiaries_seq"/>
+        <createSequence sequenceName="beneficiaries_seq" startValue="1" incrementBy="1"/>
+    </changeSet>
+    <!-- a label or an IBAN is unique per customer, not across customers -->
+    <changeSet id="1792864800000-6" author="ch4mp">
+        <dropUniqueConstraint tableName="beneficiaries" constraintName="uc_43f2eae19d0eabc0cf5df4d4d"/>
+        <dropUniqueConstraint tableName="beneficiaries" constraintName="uc_a5c37d5691418578ecd3de5fc"/>
+        <addUniqueConstraint tableName="beneficiaries" columnNames="iban, customer_id"
+                             constraintName="uc_beneficiaries_iban_customer_id"/>
+        <addUniqueConstraint tableName="beneficiaries" columnNames="label, customer_id"
+                             constraintName="uc_beneficiaries_label_customer_id"/>
+    </changeSet>
+    <!-- optimistic locking of beneficiaries (@Version): existing rows start at 0 -->
+    <changeSet id="1792864800000-7" author="ch4mp">
+        <addColumn tableName="beneficiaries">
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+    <!-- a DEL revision stores the id only: the business columns of beneficiaries_aud accept null -->
+    <changeSet id="1792864800000-8" author="ch4mp">
+        <dropNotNullConstraint tableName="beneficiaries_aud" columnName="label" columnDataType="VARCHAR(255)"/>
+        <dropNotNullConstraint tableName="beneficiaries_aud" columnName="iban" columnDataType="VARCHAR(255)"/>
+        <dropNotNullConstraint tableName="beneficiaries_aud" columnName="customer_id" columnDataType="VARCHAR(255)"/>
+    </changeSet>
+</databaseChangeLog>

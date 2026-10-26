@@ -78,6 +78,10 @@
             <groupId>com.c4soft.resthero</groupId>
             <artifactId>rest-hero-starter-common</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.c4soft.resthero</groupId>
+            <artifactId>rest-hero-problem</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.jspecify</groupId>
@@ -146,6 +150,11 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.wiremock.integrations</groupId>
+            <artifactId>wiremock-spring-boot</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -173,23 +182,11 @@
                 </executions>
             </plugin>
         </plugins>
-
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-            </resource>
-            <resource>
-                <directory>../../certs</directory>
-            </resource>
-        </resources>
     </build>
 
     <profiles>
         <profile>
             <id>openapi</id>
-            <properties>
-                <integration-tests.port>8084</integration-tests.port>
-            </properties>
             <dependencies>
                 <dependency>
                     <groupId>com.github.therapi</groupId>
@@ -207,6 +204,32 @@
             <build>
                 <plugins>
                     <plugin>
+                        <!-- free ports, reserved when the build runs: another build, or the dev
+                        application, may hold any fixed port. Never declared in <properties>: the
+                        model's interpolation would freeze them before this execution sets them.
+                        Reserved in pre-integration-test, before WireMock and spring-boot:start bind
+                        them in the same phase: this plugin is declared before theirs, so it runs first -->
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>reserve-network-ports</id>
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>reserve-network-port</goal>
+                                </goals>
+                                <configuration>
+                                    <portNames>
+                                        <portName>keycloak-wiremock.port</portName>
+                                        <portName>integration-tests.port</portName>
+                                        <portName>spring-boot-jmx.port</portName>
+                                        <portName>frankfurter-wiremock.port</portName>
+                                    </portNames>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
                         <groupId>uk.co.automatictester</groupId>
                         <artifactId>wiremock-maven-plugin</artifactId>
                         <executions>
@@ -219,7 +242,7 @@
                                 </goals>
                                 <configuration>
                                     <dir>src/test/resources/wiremock/keycloak</dir>
-                                    <params>--port=8089</params>
+                                    <params>--port=${keycloak-wiremock.port}</params>
                                     <skip>false</skip>
                                 </configuration>
                             </execution>
@@ -231,7 +254,7 @@
                                 </goals>
                                 <configuration>
                                     <dir>src/test/resources/wiremock/frankfurter</dir>
-                                    <params>--port=8090</params>
+                                    <params>--port=${frankfurter-wiremock.port}</params>
                                     <skip>false</skip>
                                 </configuration>
                             </execution>
@@ -258,6 +281,8 @@
                         <groupId>org.springframework.boot</groupId>
                         <artifactId>spring-boot-maven-plugin</artifactId>
                         <configuration>
+                            <!-- shared by start and stop -->
+                            <jmxPort>${spring-boot-jmx.port}</jmxPort>
                             <profiles>h2,no-observability</profiles>
                         </configuration>
                         <executions>
@@ -269,11 +294,12 @@
                                 <configuration>
                                     <arguments>
                                         <argument>
-                                            --issuer=http://localhost:8089/auth/realms/labs
+                                            --issuer=http://localhost:${keycloak-wiremock.port}/auth/realms/labs
                                         </argument>
                                         <argument>
-                                            --com.c4-soft.springaddons.rest.client.frankfurter-client.base-url=http://localhost:8090
+                                            --com.c4-soft.springaddons.rest.client.frankfurter-client.base-url=http://localhost:${frankfurter-wiremock.port}
                                         </argument>
+                                        <argument>--server.port=${integration-tests.port}</argument>
                                     </arguments>
                                     <environmentVariables>
                                         <!--SERVER_SSL_ENABLED>false</SERVER_SSL_ENABLED-->

@@ -16,7 +16,7 @@ import com.c4soft.resthero.commons.domain.Currency;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.domain.IbanStringMapperImpl;
 
-@DataJpaTest
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @ActiveProfiles("h2")
 @Import({IbanStringMapperImpl.class})
 class CardPaymentRepositoryTest {
@@ -88,7 +88,7 @@ class CardPaymentRepositoryTest {
   @Test
   void whenFindByCardNumber_thenFiltered() {
     final var actual = paymentRepo.findByCardNumber("1111-1111-1111-1111-1", PageRequest.of(0, 10));
-    assertThat(actual.getContent()).containsExactlyInAnyOrder(payment1, payment1);
+    assertThat(actual.getContent()).containsExactlyInAnyOrder(payment1, payment2);
   }
 
   @Test

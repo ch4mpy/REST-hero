@@ -1,0 +1,24 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPattern": ".*/accounts/99"
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/problem+json"
+    },
+    "jsonBody": {
+      "type": "urn:rest-hero:problem:concurrent-modification",
+      "title": "Conflict",
+      "status": 409,
+      "detail": "Account 99 was modified in the meantime",
+      "instance": "/accounts/99",
+      "parameters": {
+        "entity": "Account",
+        "id": 99
+      }
+    }
+  }
+}

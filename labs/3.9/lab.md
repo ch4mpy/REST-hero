@@ -10,7 +10,7 @@ jonction entre Envers et le code applicatif.
 
 ## Consignes
 
-Lancer `./lab.sh 3.9` pour créer la branche `lab/3.9`.
+Lancer `./start-lab.sh 3.9` pour créer la branche `lab/3.9`.
 
 1. Ouvrir `api/account-service/src/main/java/com/c4soft/resthero/account/PersistenceConfiguration.java` et repérer le
 	bloc `Revinfo` qui décrit les métadonnées des révisions (`REV`, `REVTSTMP`, `USERNAME`).

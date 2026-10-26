@@ -10,17 +10,23 @@ qu'elle soit effectivement prise en compte par Spring Boot.
 
 ## Consignes
 
-Lancer `./lab.sh 2.3` pour créer la branche `lab/2.3`.
+Lancer `./start-lab.sh 2.3` pour créer la branche `lab/2.3`.
 
 1. Ouvrir `api/account-service/src/main/resources/application.yml` et repérer, dans le document YAML activé par
-   le profile `postgresql`, le repère `LAB:2.3` à la place du mot de passe applicatif. Le renseigner avec une
-   valeur (`password: change-me` par exemple).
-2. Expliquer pourquoi une valeur écrite en dur dans `application.yml`, comme celle que le stagiaire vient de
-   saisir, n'est presque jamais celle réellement utilisée en environnement de développement ou de production.
-   Retrouver dans `secrets/rest-api/postgres_password.txt` le mot de passe effectivement configuré pour la base
-   PostgreSQL locale (généré aléatoirement par `build-0-env.sh`), et expliquer comment le fournir à l'application
-   sans toucher au fichier `application.yml` :
+   le profile `postgresql`, le repère `LAB:2.3` à la place du mot de passe applicatif. Le renseigner avec un
+   placeholder qui référence la variable d'environnement `SPRING_DATASOURCE_PASSWORD` : `password:
+   ${SPRING_DATASOURCE_PASSWORD}`.
+2. Expliquer pourquoi un mot de passe écrit en dur dans `application.yml` n'est presque jamais celui réellement
+   utilisé en environnement de développement ou de production, et pourquoi ce placeholder n'a volontairement pas de
+   valeur par défaut (`${NOM:défaut}`) : sans variable, l'application doit refuser de démarrer plutôt que d'utiliser
+   un mot de passe prévisible. Retrouver dans `secrets/rest-api/postgres_password.txt` le mot de passe effectivement
+   configuré pour la base PostgreSQL locale (généré aléatoirement par `build-0-env.sh`, qui l'écrit aussi dans
+   `.env` sous le nom `SPRING_DATASOURCE_PASSWORD`), et expliquer les trois façons de le fournir à l'application sans
+   toucher au fichier `application.yml` : charger `.env` (c'est ce que fait une run config d'IDE configurée avec ce
+   fichier), une variable d'environnement, ou un argument en ligne de commande :
    ```bash
+   set -a && source .env && set +a && java -jar account-service.jar
+   # ou
    SPRING_DATASOURCE_PASSWORD=$(cat secrets/rest-api/postgres_password.txt) java -jar account-service.jar
    # ou
    java -jar account-service.jar --spring.datasource.password=$(cat secrets/rest-api/postgres_password.txt)

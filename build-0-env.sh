@@ -127,6 +127,39 @@ if [ ! -f ./certs/$CN.crt ]; then
     bash ./certs/add-to-jre-cacerts.sh ~/.ssh/$CN.jks $SSL_PASSWORD $CN
   fi
 
+  # What the Docker stack reads (the compose files, the Keycloak image): the certificate, its key and
+  # the keystore. Not the PKCS12 copy, the password file, the request nor the openssl config: nothing
+  # here reads them, and a password file in a repository folder is one `git add -A` from a leak.
   echo "Copying self-signed SSL certificates for ${CN} from ~/.ssh to ./certs"
-  cp ~/.ssh/${CN}.* ./certs/
+  cp ~/.ssh/${CN}.crt ~/.ssh/${CN}.key ~/.ssh/${CN}.jks ./certs/
+fi
+
+# The certificate Spring Boot's image builds trust: a Paketo "ca-certificates" binding is a folder
+# with a `type` file and PEM certificates, never a keystore.
+if [ ! -f ./certs/ca-certificates/type ]; then
+  mkdir -p ./certs/ca-certificates
+  printf 'ca-certificates' > ./certs/ca-certificates/type
+  cp ./certs/${CN}.crt ./certs/ca-certificates/${CN}.pem
+fi
+
+# The services read their certificate and key from this folder, outside their jars (spring.ssl.bundle
+# in application.yml): an absolute path, in the form the JVM opens (D:/... under Git Bash).
+certs_dir=$(pwd)/certs
+if command -v cygpath > /dev/null 2>&1; then
+  certs_dir=$(cygpath -m "${certs_dir}")
+fi
+case "${certs_dir}" in
+  *\'*)
+    echo "ERROR: ${certs_dir} contains a single quote, which .env can't hold: move the repository." >&2
+    exit 1
+    ;;
+esac
+if grep -q '^REST_HERO_CERTS_DIR=' ./.env; then
+  if [ "${REST_HERO_CERTS_DIR:-}" != "${certs_dir}" ]; then
+    echo "ERROR: REST_HERO_CERTS_DIR in .env is '${REST_HERO_CERTS_DIR:-}', not ${certs_dir}. Remove that line from .env, then run this script again." >&2
+    exit 1
+  fi
+else
+  # single-quoted: `source ./.env` (and docker compose, the IDE) reads it back intact
+  echo "REST_HERO_CERTS_DIR='${certs_dir}'" >> ./.env
 fi

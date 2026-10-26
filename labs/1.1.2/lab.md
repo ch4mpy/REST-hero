@@ -11,7 +11,7 @@ garantit qu'il soit exécutable sans le bon plugin configuré sur cette même ph
 
 ## Consignes
 
-Lancer `.bash ./lab.sh 1.1.2` pour créer la branche `lab/1.1.2`.
+Lancer `./start-lab.sh 1.1.2` pour créer la branche `lab/1.1.2`.
 
 1. Lancer `mvn -pl account-service -am clean package -DskipTests`. Le build réussit, mais inspecter le jar produit
    (`unzip -l account-service/target/account-service-*.jar`, ou simplement sa taille) : il ne contient ni

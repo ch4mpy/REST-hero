@@ -27,7 +27,7 @@ import com.c4soft.resthero.card.jpa.CardPaymentRepository;
 import com.c4soft.resthero.card.jpa.CardRepository;
 import com.c4soft.resthero.card.web.CardController;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "server.ssl.enabled=false")
 @ActiveProfiles("h2")
 @Import({MockedOAuth2ClientTestConfiguration.class})
 @AutoConfigureMockMvc
@@ -84,7 +84,7 @@ class CardPaymentServiceApplicationTests {
 
     mockMvc
         .perform(
-            post("https://localhost" + CardController.PAYMENT_LIST_PATH, card.getNumber())
+            post(CardController.PAYMENT_LIST_PATH, card.getNumber())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {

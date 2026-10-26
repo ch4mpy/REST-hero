@@ -11,18 +11,19 @@ l'origine.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.4` pour créer la branche `lab/1.4`.
+Lancer `./start-lab.sh 1.4` pour créer la branche `lab/1.4`.
 
 1. Lancer `mvn verify -pl account-service -am -Popenapi,h2 -DskipTests`. Constater un échec rapide (quelques
    secondes) avec une `ResourceAccessException` / `Connexion refusée` sur
-   `http://localhost:8089/auth/realms/labs/.well-known/openid-configuration`. C'est l'application elle-même qui
-   échoue à démarrer : au lancement, Spring tente de récupérer la configuration OpenID du realm Keycloak configuré
-   en émetteur, et rien n'écoute sur ce port.
+   `http://localhost:<port>/auth/realms/labs/.well-known/openid-configuration`, `<port>` étant le port libre que le
+   build a réservé pour WireMock (`keycloak-wiremock.port`). C'est l'application elle-même qui échoue à démarrer : au
+   lancement, Spring tente de récupérer la configuration OpenID du realm Keycloak configuré en émetteur, et rien
+   n'écoute sur ce port.
 2. Retrouver dans `api/account-service/pom.xml` (repère `LAB:1.4`, dans le profile `openapi`) l'exécution de plugin
    manquante, et la reconstruire. Relancer `mvn verify -pl account-service -am -Popenapi,h2 -DskipTests` et
    vérifier que `frontend/openapi/account-service.openapi.json` est bien régénéré.
-3. Expliquer le rôle de ce plugin : il démarre un faux serveur WireMock sur le port 8089, servant les réponses
-   figées dans `src/test/resources/wiremock/keycloak`, afin que l'application démarrée par
+3. Expliquer le rôle de ce plugin : il démarre un faux serveur WireMock sur le port réservé par le
+   `build-helper-maven-plugin`, servant les réponses de `src/test/resources/wiremock/keycloak`, afin que l'application démarrée par
    `spring-boot-maven-plugin` (goal `start`, phase `pre-integration-test`) trouve un fournisseur OIDC à interroger
    sans dépendre d'un vrai Keycloak. Repérer dans les logs l'ordre des étapes : démarrage de WireMock, démarrage de
    l'application, récupération de la spec sur `/v3/api-docs`, arrêt de l'application puis de WireMock.

@@ -11,7 +11,7 @@ partagent le même vocabulaire.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.7` pour créer la branche `lab/1.7`.
+Lancer `./start-lab.sh 1.7` pour créer la branche `lab/1.7`.
 
 1. Lancer `mvn help:active-profiles -pl customer-service` sans aucune option `-P`. Constater qu'aucun profile
    n'est actif, alors qu'auparavant `postgresql` l'était par défaut. Confirmer avec

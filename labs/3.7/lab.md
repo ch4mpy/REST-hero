@@ -10,7 +10,7 @@ sont pas toujours bien servis par les query methods.
 
 ## Consignes
 
-Lancer `./lab.sh 3.7` pour créer la branche `lab/3.7`.
+Lancer `./start-lab.sh 3.7` pour créer la branche `lab/3.7`.
 
 1. Lancer `mvn -pl account-service -am compile`. Constater l'échec de compilation dans `MoneyTransferController.java`
 	: la méthode `findAll(specification, pageable)` n'est plus disponible.

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  No jar of this project may contain a private key, a keystore or a keystore password: the local
+  CA's key, once copied into a jar, let anyone who got one forge certificates the developer's
+  machine accepts for any domain.
+
+  Run in the verify phase of every jar module by the "jar-content-check" execution of
+  maven-antrun-plugin (api/pom.xml), with the property "jar": the module's packaged jar, after
+  Spring Boot's repackage. Fails naming each forbidden entry.
+
+  Never edited to make a build pass: remove the file from the module, then `./mvnw clean verify`
+  (target/classes keeps the copies of earlier builds).
+-->
+<project name="jar-content-check" default="check">
+
+	<target name="check">
+		<fail unless="jar" message="jar-content-check: the property 'jar' (the jar to check) is required" />
+		<fail message="jar-content-check: no jar at ${jar}, nothing would be checked">
+			<condition>
+				<not>
+					<available file="${jar}" type="file" />
+				</not>
+			</condition>
+		</fail>
+
+		<!-- entry names, one per line, with "/" separators; unset when there is none -->
+		<pathconvert property="jar-content-check.forbidden" pathsep="${line.separator}" dirsep="/" setonempty="false">
+			<!-- by name: keys, keystores and truststores, keystore passwords -->
+			<zipfileset src="${jar}" casesensitive="false">
+				<include name="**/*.key" />
+				<include name="**/*.p12" />
+				<include name="**/*.pkcs12" />
+				<include name="**/*.pfx" />
+				<include name="**/*.jks" />
+				<include name="**/*.keystore" />
+				<include name="**/*.truststore" />
+				<include name="**/*.password.txt" />
+				<include name="**/password.txt" />
+				<include name="**/*.jceks" />
+				<include name="**/*.bks" />
+				<include name="**/*.p8" />
+				<include name="**/*.pk8" />
+				<include name="**/*.ppk" />
+				<!-- OpenSSH's private keys, which have no extension (their .pub is public) -->
+				<include name="**/id_rsa" />
+				<include name="**/id_dsa" />
+				<include name="**/id_ecdsa" />
+				<include name="**/id_ecdsa_sk" />
+				<include name="**/id_ed25519" />
+				<include name="**/id_ed25519_sk" />
+			</zipfileset>
+			<!-- by content: a PEM file holding a private key (a certificate alone is public), under
+			any extension a certificate goes by (a tls.crt may hold the key too); a .key is refused
+			above, whatever it holds -->
+			<restrict>
+				<zipfileset src="${jar}" casesensitive="false">
+					<include name="**/*.pem" />
+					<include name="**/*.crt" />
+					<include name="**/*.cer" />
+				</zipfileset>
+				<or>
+					<contains text="PRIVATE KEY" />
+					<!-- the header of a private key as Spring Boot reads it (PemPrivateKeyParser:
+					-+BEGIN\s+PRIVATE\s+KEY, RSA, EC or ENCRYPTED before PRIVATE, in any case), with
+					any word before PRIVATE; not a "Private Key" alone (openssl x509 -text writes
+					"Private Key Usage Period") -->
+					<containsregexp expression="-+BEGIN\s+(?:[^-\s]+\s+)*PRIVATE\s+KEY" casesensitive="false" />
+					<!-- such a header cut by a line break (BEGIN PRIVATE at the end of a line, KEY on
+					the next): Ant reads a file one line at a time, so a line that ends in a header
+					before its closing dashes is refused, whatever its label (no tool cuts a
+					certificate's either) -->
+					<containsregexp expression="-+BEGIN(?:\s+[^-\s]+)*\s*$" casesensitive="false" />
+				</or>
+			</restrict>
+			<!-- a zip entry reads "<archive>:<entry>": keep the entry, which has no ":" -->
+			<regexpmapper from="^.*:([^:]+)$" to="\1" />
+		</pathconvert>
+
+		<fail if="jar-content-check.forbidden">jar-content-check: ${jar} contains a private key, a keystore or a keystore password, which must never be packaged:
+${jar-content-check.forbidden}</fail>
+	</target>
+
+</project>

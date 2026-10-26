@@ -10,7 +10,7 @@ d'entrée HTTP, et repérer l'effet d'une annotation de mapping manquante sur le
 
 ## Consignes
 
-Lancer `./lab.sh 4.1` pour créer la branche `lab/4.1`.
+Lancer `./start-lab.sh 4.1` pour créer la branche `lab/4.1`.
 
 1. Lancer `mvn -pl customer-service test -Dtest=CustomerControllerTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater qu'un des endpoints n'est plus routé correctement et que les tests de lecture de la liste des clients

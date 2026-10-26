@@ -10,7 +10,7 @@ figer une version déjà gérée par une BOM, et savoir diagnostiquer un conflit
 
 ## Consignes
 
-Lancer `.bash ./lab.sh 1.2` pour créer la branche `lab/1.2`.
+Lancer `./start-lab.sh 1.2` pour créer la branche `lab/1.2`.
 
 1. Lancer `mvn -pl account-service dependency:tree -Ph2 -Dincludes=com.h2database`. Constater que `h2` n'apparaît
    qu'en scope `test`, alors que le profile `h2` est actif. Retrouver dans `api/account-service/pom.xml` (repère

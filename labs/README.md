@@ -89,6 +89,8 @@ spring:
 Règles :
 
 - Le marqueur `START` et le marqueur `END` doivent porter le même id et le même verbe (`REMOVE` ou `TODO`).
+- Un marqueur tient sur une seule ligne, commentaire refermé compris : un commentaire XML ouvert sur une ligne et
+  refermé sur la suivante n'est pas reconnu, et la branche sort identique à `main`.
 - Les marqueurs ne s'imbriquent pas pour un même id : le premier `END`
   rencontré après un `START` referme le bloc.
 - Un même fichier peut porter des marqueurs pour plusieurs TPs différents ; chaque génération de branche ne traite que
@@ -104,6 +106,37 @@ Règles :
 
 # Prévisualiser le résultat du retrait pour un id, sans créer de branche
 ./labs/scripts/strip_markers.py 1.4.3 .
+```
+
+### Vérifier les branches de TP
+
+Le retrait n'étant qu'une opération texte, un changement de `main` qui touche un fichier marqué peut casser une branche
+de TP. Cette boucle génère chaque branche dans un dossier temporaire et dit si elle compile (à lancer depuis la racine
+du dépôt, après une vérification complète qui a écrit les specs dans `frontend/openapi`) :
+
+```bash
+for id in 1.4 1.6 2.3 2.6 3.10 4.4 4.6; do   # les TP concernés ; la liste des dossiers de labs/ pour tous
+  tmp=$(mktemp -d); git archive HEAD | tar -x -C "$tmp"
+  mkdir -p "$tmp/frontend/openapi" && cp frontend/openapi/*.openapi.json "$tmp/frontend/openapi/"
+  cp .env "$tmp/"
+  ./labs/scripts/strip_markers.py "$id" "$tmp" >/dev/null
+  if (cd "$tmp/api" && ./mvnw -q -DskipTests -Ph2 test-compile >"$tmp/build.log" 2>&1); then
+    echo "COMPILES $id"
+  else
+    echo "BREAKS   $id  ($(grep -m1 -E 'ERROR.*\.java' "$tmp/build.log"))"
+  fi
+  rm -rf "$tmp"
+done
+```
+
+Une branche qui compile doit ensuite échouer comme son énoncé l'annonce (lancer la commande de test de son `lab.md`
+dans le dossier temporaire). Celles dont l'énoncé fait constater un échec de compilation (1.1.1, 1.3, 1.5, 2.1, 3.5,
+3.6, 3.7, 6.1 et 6.2) ne compilent pas, par conception : vérifier que l'erreur est celle que l'énoncé décrit.
+
+Aucun énoncé ne doit plus citer l'ancien point d'entrée `lab.sh` ; cette commande ne doit rien afficher :
+
+```bash
+grep -nE '(^|[^-])lab\.sh' labs/*/lab.md labs/scripts/* README.md | grep -vE 'start-lab|exit-lab|build-lab'
 ```
 
 ## Limite connue

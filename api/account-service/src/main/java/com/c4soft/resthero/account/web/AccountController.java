@@ -3,9 +3,9 @@ package com.c4soft.resthero.account.web;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,14 +19,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientException;
 import com.c4soft.resthero.account.domain.Account;
 import com.c4soft.resthero.account.jpa.AccountRepository;
 import com.c4soft.resthero.api.CustomersApi;
 import com.c4soft.resthero.commons.domain.Iban;
 import com.c4soft.resthero.commons.events.DomainEvent;
 import com.c4soft.resthero.commons.events.ResourceType;
-import com.c4soft.resthero.commons.exception.ResourceNotFoundException;
+import com.c4soft.resthero.problem.ApiProblemException;
+import com.c4soft.resthero.problem.ProblemType;
 import io.micrometer.observation.annotation.Observed;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -79,23 +80,26 @@ public class AccountController {
    *
    * @param dto
    * @return a 201 Created response with the Location header set to the newly created account's URL.
-   * @throws ResourceNotFoundException if the customer ID in the request is not known by the
-   *         customer service.
+   * @throws ApiProblemException {@link ProblemType#ACCOUNT_ALREADY_MANAGED} when an account with
+   *         this IBAN exists, {@link ProblemType#CUSTOMER_NOT_FOUND} when the customer service
+   *         does not know the customer, {@link ProblemType#DOWNSTREAM_SERVICE_ERROR} when that
+   *         service answers anything else or cannot be reached.
    */
-  @Transactional
+  @Transactional(rollbackFor = ApiProblemException.class)
   @PostMapping(BASE_PATH)
   @PreAuthorize("hasAuthority('account.create')")
   public ResponseEntity<Void> createAccount(
       @RequestBody @Valid AccountCreationRequest dto,
-      Authentication auth) throws ResourceNotFoundException {
+      Authentication auth) throws ApiProblemException {
     final var iban = Iban.of(dto.iban());
 
     // Assert that no account with this IBAN is managed already
     if (accountRepo.existsByIban(iban)) {
       log.warn("Rejecting duplicate account {} creation", iban);
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "The account-service already manages account %s".formatted(iban.toHumanReadableString()));
+      throw new ApiProblemException(
+          ProblemType.ACCOUNT_ALREADY_MANAGED,
+          "The account-service already manages account %s".formatted(iban.toHumanReadableString()),
+          Map.of("iban", iban.toHumanReadableString()));
     }
 
     // Assert that the customer ID is known by the customer service
@@ -103,22 +107,23 @@ public class AccountController {
       // LAB:4.6:TODO:START appeler le customer-service pour vérifier l'existence du client
       customersApi.getCustomer(dto.customerId());
       // LAB:4.6:TODO:END
-    } catch (HttpClientErrorException e) {
-      if (HttpStatus.NOT_FOUND.equals(e.getStatusCode())) {
-        log.warn("Rejecting account {} creation for unknown customer {}", iban, dto.customerId());
-        throw new ResourceNotFoundException(
-            "Customer %s is not known by the customer-service".formatted(dto.iban()));
-      } else {
-        log
-            .error(
-                "Unexpected error while checking customer {} existence in customer-service",
-                dto.customerId(),
-                e);
-      }
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "Unexpected error while checking customer existence",
-          e);
+    } catch (HttpClientErrorException.NotFound e) {
+      log.warn("Rejecting account {} creation for unknown customer {}", iban, dto.customerId());
+      throw new ApiProblemException(
+          ProblemType.CUSTOMER_NOT_FOUND,
+          "Customer %s is not known by the customer-service".formatted(dto.customerId()),
+          Map.of("customerId", dto.customerId()));
+    } catch (RestClientException e) {
+      // the customer service's answer is for the logs, never for the client
+      log
+          .error(
+              "Unexpected error while checking customer {} existence in customer-service",
+              dto.customerId(),
+              e);
+      throw new ApiProblemException(
+          ProblemType.DOWNSTREAM_SERVICE_ERROR,
+          "The customer-service could not confirm that the customer exists",
+          Map.of("service", "customer-service"));
     }
 
     // Create the new account

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-5.0.xsd"
+        objectQuotingStrategy="QUOTE_ONLY_RESERVED_WORDS">
+    <!-- the revision entity allocates one number at a time (allocationSize = 1) -->
+    <changeSet id="1792864800000-1" author="ch4mp" dbms="postgresql">
+        <alterSequence sequenceName="revinfo_seq" incrementBy="1"/>
+    </changeSet>
+    <!-- the same for H2 -->
+    <changeSet id="1792864800000-2" author="ch4mp" dbms="h2">
+        <sql>ALTER SEQUENCE revinfo_seq INCREMENT BY 1</sql>
+    </changeSet>
+    <!-- optimistic locking of cards (@Version): existing rows start at 0 -->
+    <changeSet id="1792864800000-3" author="ch4mp">
+        <addColumn tableName="cards">
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+    <!-- a DEL revision stores the id only: the business columns of cards_aud accept null -->
+    <changeSet id="1792864800000-4" author="ch4mp">
+        <dropNotNullConstraint tableName="cards_aud" columnName="iban" columnDataType="VARCHAR(255)"/>
+    </changeSet>
+    <!-- a DEL revision stores the id only: the business columns of payments_aud accept null -->
+    <changeSet id="1792864800000-5" author="ch4mp">
+        <dropNotNullConstraint tableName="payments_aud" columnName="timestamp" columnDataType="DATETIME(6)"/>
+        <dropNotNullConstraint tableName="payments_aud" columnName="destination_iban" columnDataType="VARCHAR(255)"/>
+        <dropNotNullConstraint tableName="payments_aud" columnName="digits" columnDataType="INT"/>
+    </changeSet>
+</databaseChangeLog>

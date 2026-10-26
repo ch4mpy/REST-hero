@@ -17,7 +17,7 @@ import com.c4soft.resthero.account.web.AccountController;
 import com.c4soft.resthero.account.web.AccountResponse;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "server.ssl.enabled=false")
 @ActiveProfiles("h2")
 @Import(MockedOAuth2ClientTestConfiguration.class)
 @AutoConfigureMockMvc
@@ -45,7 +45,7 @@ class AccountServiceApplicationTests {
             mockMvc
                 .perform(
                     get(
-                        "https://localhost" + AccountController.ACCOUNT_PATH,
+                        AccountController.ACCOUNT_PATH,
                         account.getIban().toMachineReadableString()))
                 .andExpect(status().isOk())
                 .andReturn()

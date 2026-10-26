@@ -10,7 +10,7 @@ un convertisseur Spring pour un type réutilisé par plusieurs contrôleurs.
 
 ## Consignes
 
-Lancer `./lab.sh 4.2` pour créer la branche `lab/4.2`.
+Lancer `./start-lab.sh 4.2` pour créer la branche `lab/4.2`.
 
 1. Lancer `mvn -pl card-service test -Dtest=CardControllerTest -Dsurefire.failIfNoSpecifiedTests=false`.
 	Constater que les requêtes qui passent un `Iban` en paramètre ne sont plus converties correctement.

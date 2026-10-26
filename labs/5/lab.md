@@ -10,7 +10,7 @@ mal synchronisé sur des tests de repository.
 
 ## Consignes
 
-Lancer `./lab.sh 5` pour créer la branche `lab/5`.
+Lancer `./start-lab.sh 5` pour créer la branche `lab/5`.
 
 1. Lancer `mvn -pl account-service test -Dtest=AccountRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false` puis
 	`mvn -pl card-service test -Dtest=CardRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false`. Constater que les

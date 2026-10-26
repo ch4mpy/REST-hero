@@ -12,7 +12,7 @@ Ce TP n'a pas de marqueur `LAB:` à reconstruire : le mécanisme de marqueurs de
 
 ## Consignes
 
-Lancer `./lab.sh 6.3`.
+Lancer `./start-lab.sh 6.3`.
 
 1. Lancer l'environnement complet (`./deploy-dev.sh`, ou reprendre l'environnement du TP 6.2), puis `cd frontend &&
    npm run dev`.

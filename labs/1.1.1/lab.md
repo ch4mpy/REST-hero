@@ -12,7 +12,7 @@ sur ce sujet.
 
 ## Consignes
 
-Lancer `bash ./lab.sh 1.1.1` pour créer la branche `lab/1.1.1`.
+Lancer `./start-lab.sh 1.1.1` pour créer la branche `lab/1.1.1`.
 
 1. Dans `api/pom.xml`, un `// TODO` a remplacé la déclaration du module `card-service` dans `<modules>`. Le
    restaurer, puis expliquer avec `mvn -pl card-service -am validate` la différence entre un module simplement
